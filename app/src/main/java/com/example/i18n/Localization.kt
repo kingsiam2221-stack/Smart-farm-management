@@ -1,5 +1,241 @@
 package com.example.i18n
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.example.data.local.AnimalEventType
+import com.example.data.local.AttendanceStatus
+import com.example.data.local.FarmCategory
+import com.example.data.local.OrderStatus
+import com.example.data.local.PaymentStatus
+
+val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.EN }
+
+@Composable
+fun tr(en: String, bn: String): String =
+    if (LocalAppLanguage.current == AppLanguage.BN) bn else en
+
+fun trLang(lang: AppLanguage, en: String, bn: String): String =
+    if (lang == AppLanguage.BN) bn else en
+
+@Composable
+fun isBangla(): Boolean = LocalAppLanguage.current == AppLanguage.BN
+
+object DomainLocalization {
+    fun farmCategory(catKey: String, customName: String = "", isBn: Boolean): String {
+        if (catKey == FarmCategory.CUSTOM.name && customName.isNotBlank()) return customName
+        val cat = FarmCategory.entries.find { it.name == catKey } ?: return customName.ifBlank { catKey }
+        if (!isBn) return cat.label
+        return when (cat) {
+            FarmCategory.POULTRY -> "পোল্ট্রি / মুরগির খামার"
+            FarmCategory.DAIRY -> "ডেইরি / দুগ্ধ খামার"
+            FarmCategory.CATTLE -> "গবাদি পশু খামার"
+            FarmCategory.GOAT -> "ছাগলের খামার"
+            FarmCategory.DUCK -> "হাঁসের খামার"
+            FarmCategory.BIRD -> "পাখির খামার"
+            FarmCategory.QUAIL -> "কোয়েল খামার"
+            FarmCategory.MIXED -> "মিশ্র খামার"
+            FarmCategory.CUSTOM -> "কাস্টম খামার"
+        }
+    }
+
+    fun animalCategory(name: String, isBn: Boolean): String {
+        if (!isBn) return name
+        return when (name.trim().lowercase()) {
+            "cow" -> "গরু"
+            "buffalo" -> "মহিষ"
+            "goat" -> "ছাগল"
+            "sheep" -> "ভেড়া"
+            "chicken" -> "মুরগি"
+            "duck" -> "হাঁস"
+            "turkey" -> "টার্কি"
+            "pigeon" -> "কবুতর"
+            "quail" -> "কোয়েল"
+            "parrot" -> "টিয়া / তোতা"
+            "other birds" -> "অন্যান্য পাখি"
+            else -> name
+        }
+    }
+
+    fun animalEventType(type: AnimalEventType, isBn: Boolean): String {
+        if (!isBn) return type.label
+        return when (type) {
+            AnimalEventType.BIRTH -> "জন্ম"
+            AnimalEventType.PURCHASE -> "ক্রয়"
+            AnimalEventType.DEATH -> "মৃত্যু"
+            AnimalEventType.TRANSFER -> "স্থানান্তর"
+            AnimalEventType.SALE -> "বিক্রয়"
+            AnimalEventType.VACCINATION -> "টিকা প্রদান"
+            AnimalEventType.FEEDING -> "খাদ্য প্রদান"
+            AnimalEventType.MEDICAL -> "চিকিৎসা খরচ"
+        }
+    }
+
+    fun animalEventKey(raw: String, isBn: Boolean): String {
+        val t = AnimalEventType.entries.find { it.name == raw || it.label.equals(raw, ignoreCase = true) }
+        return if (t != null) animalEventType(t, isBn) else raw
+    }
+
+    fun orderStatus(status: OrderStatus, isBn: Boolean): String {
+        if (!isBn) return status.label
+        return when (status) {
+            OrderStatus.PENDING -> "অপেক্ষমাণ"
+            OrderStatus.CONFIRMED -> "নিশ্চিত"
+            OrderStatus.PROCESSING -> "প্রস্তুত হচ্ছে"
+            OrderStatus.READY_FOR_DELIVERY -> "ডেলিভারির জন্য প্রস্তুত"
+            OrderStatus.SHIPPED -> "পাঠানো হয়েছে"
+            OrderStatus.DELIVERED -> "ডেলিভারি সম্পন্ন"
+            OrderStatus.CANCELLED -> "বাতিল"
+        }
+    }
+
+    fun paymentStatus(status: PaymentStatus, isBn: Boolean): String {
+        if (!isBn) return status.label
+        return when (status) {
+            PaymentStatus.PENDING -> "অপেক্ষমাণ"
+            PaymentStatus.SUCCESSFUL -> "সফল"
+            PaymentStatus.FAILED -> "ব্যর্থ"
+            PaymentStatus.REFUNDED -> "ফেরত (রিফান্ড)"
+        }
+    }
+
+    fun attendanceStatus(status: AttendanceStatus, isBn: Boolean): String {
+        if (!isBn) return status.label
+        return when (status) {
+            AttendanceStatus.PRESENT -> "উপস্থিত"
+            AttendanceStatus.ABSENT -> "অনুপস্থিত"
+            AttendanceStatus.LEAVE -> "ছুটি"
+        }
+    }
+
+    fun period(periodKey: String, isBn: Boolean): String {
+        if (!isBn) return periodKey
+        return when (periodKey) {
+            "All" -> "সব"
+            "Daily" -> "দৈনিক"
+            "Weekly" -> "সাপ্তাহিক"
+            "Monthly" -> "মাসিক"
+            "Yearly" -> "বাৎসরিক"
+            else -> periodKey
+        }
+    }
+
+    fun eggCategory(cat: String, isBn: Boolean): String {
+        if (!isBn) return cat
+        return when (cat) {
+            "Chicken Eggs" -> "মুরগির ডিম"
+            "Duck Eggs" -> "হাঁসের ডিম"
+            "Quail Eggs" -> "কোয়েলের ডিম"
+            "Pigeon Eggs" -> "কবুতরের ডিম"
+            "Other Bird Eggs" -> "অন্যান্য পাখির ডিম"
+            "Custom" -> "কাস্টম"
+            "Custom Eggs" -> "কাস্টম ডিম"
+            else -> cat
+        }
+    }
+
+    fun productCategory(cat: String, isBn: Boolean): String {
+        if (!isBn) return cat
+        return when (cat) {
+            "Eggs" -> "ডিম"
+            "Milk" -> "দুধ"
+            "Meat" -> "মাংস"
+            "Live Animals" -> "জীবিত পশু"
+            "Chickens" -> "মুরগি"
+            "Ducks" -> "হাঁস"
+            "Cows" -> "গরু"
+            "Goats" -> "ছাগল"
+            "Birds" -> "পাখি"
+            "Animal Feed" -> "পশুর খাদ্য"
+            "Poultry Feed" -> "মুরগির খাদ্য"
+            "Medicines" -> "ওষুধ"
+            "Vaccines" -> "টিকা"
+            "Farm Equipment" -> "খামার সরঞ্জাম"
+            "Other" -> "অন্যান্য"
+            else -> animalCategory(cat, true)
+        }
+    }
+
+    fun expenseCategory(cat: String, isBn: Boolean): String {
+        if (!isBn) return cat
+        return when (cat) {
+            "Animal Purchase" -> "পশু ক্রয়"
+            "Bird Purchase" -> "পাখি ক্রয়"
+            "Food & Feed" -> "খাদ্য ও ফিড"
+            "Medicine" -> "ওষুধ"
+            "Vaccination" -> "টিকা প্রদান"
+            "Employee Salary" -> "কর্মচারী বেতন"
+            "Electricity" -> "বিদ্যুৎ বিল"
+            "Water" -> "পানি বিল"
+            "Transportation" -> "পরিবহন"
+            "Equipment" -> "সরঞ্জাম"
+            "Maintenance" -> "রক্ষণাবেক্ষণ"
+            "Other" -> "অন্যান্য"
+            else -> cat
+        }
+    }
+
+    fun paymentMethod(method: String, isBn: Boolean): String {
+        if (!isBn) return method
+        return when (method) {
+            "Cash" -> "নগদ (ক্যাশ)"
+            "Bank Transfer" -> "ব্যাংক ট্রান্সফার"
+            "Cash on Delivery" -> "ক্যাশ অন ডেলিভারি"
+            else -> method
+        }
+    }
+
+    fun healthStatus(status: String, isBn: Boolean): String {
+        if (!isBn) return status
+        return when (status.trim().lowercase()) {
+            "healthy" -> "সুস্থ"
+            "sick" -> "অসুস্থ"
+            "under treatment" -> "চিকিৎসাধীন"
+            "quarantined" -> "কোয়ারেন্টাইন"
+            else -> status
+        }
+    }
+
+    fun gender(gender: String, isBn: Boolean): String {
+        if (!isBn) return gender
+        return when (gender.trim().lowercase()) {
+            "male" -> "পুরুষ / ষাঁড় / মোরগ"
+            "female" -> "স্ত্রী / গাভী / মুরগি"
+            "mixed" -> "মিশ্র"
+            else -> gender
+        }
+    }
+
+    fun subscriptionStatus(status: String, isBn: Boolean): String {
+        if (!isBn) return status
+        return when (status.uppercase()) {
+            "ACTIVE" -> "সক্রিয়"
+            "EXPIRED" -> "মেয়াদোত্তীর্ণ"
+            "PENDING" -> "অপেক্ষমাণ"
+            else -> status
+        }
+    }
+
+    fun accountStatus(status: String, isBn: Boolean): String {
+        if (!isBn) return status
+        return when (status.uppercase()) {
+            "ACTIVE" -> "সক্রিয়"
+            "INACTIVE" -> "নিষ্ক্রিয়"
+            "SUSPENDED" -> "স্থগিত"
+            else -> status
+        }
+    }
+
+    fun userRole(role: String, isBn: Boolean): String {
+        if (!isBn) return role
+        return when (role.uppercase()) {
+            "FARMER" -> "খামারি"
+            "CUSTOMER" -> "গ্রাহক"
+            "SUPER_ADMIN" -> "সুপার অ্যাডমিন"
+            else -> role
+        }
+    }
+}
+
 data class AppStrings(
     val appName: String,
     val dashboard: String,
@@ -158,7 +394,7 @@ object Localization {
         livestock = "পশু ও পাখি",
         eggs = "ডিম",
         operations = "পরিচালনা",
-        commerce = "বিক্রয় ও গ্রাহক",
+        commerce = "বিক্রয় ও গ্রাহক",
         reports = "রিপোর্ট",
         more = "আরও",
         marketplace = "বাজার",

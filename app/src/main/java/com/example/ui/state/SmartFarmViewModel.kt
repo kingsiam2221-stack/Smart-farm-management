@@ -8,6 +8,7 @@ import com.example.data.repository.FarmRepository
 import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -220,17 +221,35 @@ class SmartFarmViewModel(
     fun showMessage(msg: String) { _snackbarMessage.value = msg }
     fun clearAuthError() { _authError.value = null }
 
+    private fun isBn(): Boolean = preferences.value.languageCode == "bn"
+    private fun msg(en: String, bn: String): String = if (isBn()) bn else en
+    private fun localizeError(raw: String?, fallbackEn: String, fallbackBn: String): String {
+        if (!isBn()) return raw ?: fallbackEn
+        return when (raw) {
+            "Email/mobile and password are required." -> "ইমেইল/মোবাইল এবং পাসওয়ার্ড প্রয়োজন।"
+            "No account found with those credentials." -> "এই তথ্যে কোনো অ্যাকাউন্ট পাওয়া যায়নি।"
+            "Incorrect password." -> "ভুল পাসওয়ার্ড।"
+            "This account is suspended. Contact Super Admin." -> "এই অ্যাকাউন্টটি স্থগিত করা হয়েছে। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।"
+            "This account is inactive. Contact Super Admin." -> "এই অ্যাকাউন্টটি নিষ্ক্রিয়। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।"
+            "Please complete all fields (password min 4 chars)." -> "সব তথ্য পূরণ করুন (পাসওয়ার্ড কমপক্ষে ৪ অক্ষর)।"
+            "Public Super Admin registration is restricted." -> "পাবলিক সুপার অ্যাডমিন নিবন্ধন অনুমোদিত নয়।"
+            "An account with this email already exists." -> "এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট তৈরি করা হয়েছে।"
+            "New password must be at least 4 characters." -> "নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।"
+            "Account not found." -> "অ্যাকাউন্ট পাওয়া যায়নি।"
+            else -> raw ?: fallbackBn
+        }
+    }
+
     fun login(identifier: String, password: String) {
         viewModelScope.launch {
             _authError.value = null
             repository.login(identifier, password)
                 .onSuccess { user ->
                     prefsRepo.setCurrentUserId(user.id)
-                    prefsRepo.setLanguage(user.preferredLanguage)
                     prefsRepo.setCurrency(user.preferredCurrency)
                     repository.checkExpiredSubscriptions()
                 }
-                .onFailure { _authError.value = it.message ?: "Login failed." }
+                .onFailure { _authError.value = localizeError(it.message, "Login failed.", "লগইন ব্যর্থ হয়েছে।") }
         }
     }
 
@@ -240,9 +259,12 @@ class SmartFarmViewModel(
             repository.register(name, mobile, email, password, role)
                 .onSuccess { user ->
                     prefsRepo.setCurrentUserId(user.id)
-                    _snackbarMessage.value = "Account created! Welcome, ${user.name}."
+                    _snackbarMessage.value = msg(
+                        "Account created! Welcome, ${user.name}.",
+                        "অ্যাকাউন্ট তৈরি হয়েছে! স্বাগতম, ${user.name}।"
+                    )
                 }
-                .onFailure { _authError.value = it.message ?: "Registration failed." }
+                .onFailure { _authError.value = localizeError(it.message, "Registration failed.", "নিবন্ধন ব্যর্থ হয়েছে।") }
         }
     }
 
@@ -251,10 +273,13 @@ class SmartFarmViewModel(
             _authError.value = null
             repository.resetPassword(identifier, newPassword)
                 .onSuccess {
-                    _snackbarMessage.value = "Password updated. You can now sign in."
+                    _snackbarMessage.value = msg(
+                        "Password updated. You can now sign in.",
+                        "পাসওয়ার্ড আপডেট হয়েছে। এখন লগইন করুন।"
+                    )
                     onDone()
                 }
-                .onFailure { _authError.value = it.message ?: "Reset failed." }
+                .onFailure { _authError.value = localizeError(it.message, "Reset failed.", "পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে।") }
         }
     }
 
@@ -291,7 +316,7 @@ class SmartFarmViewModel(
         val user = currentUser.value ?: return
         viewModelScope.launch {
             repository.updateProfile(user, name, mobile, imageUri)
-            _snackbarMessage.value = "Profile updated."
+            _snackbarMessage.value = msg("Profile updated.", "প্রোফাইল আপডেট হয়েছে।")
         }
     }
 
@@ -304,7 +329,7 @@ class SmartFarmViewModel(
         val user = currentUser.value ?: return
         viewModelScope.launch {
             repository.submitSupportRequest(user, subject, message)
-            _snackbarMessage.value = "Support request submitted."
+            _snackbarMessage.value = msg("Support request submitted.", "সাপোর্ট অনুরোধ পাঠানো হয়েছে।")
         }
     }
 
@@ -313,7 +338,7 @@ class SmartFarmViewModel(
         val user = currentUser.value ?: return
         viewModelScope.launch {
             val savedId = repository.saveFarm(farm.copy(ownerUserId = user.id))
-            _snackbarMessage.value = "${farm.name} saved."
+            _snackbarMessage.value = msg("${farm.name} saved.", "${farm.name} সংরক্ষিত হয়েছে।")
             if (preferences.value.activeFarmId == null && farmerState.value.farms.isEmpty()) {
                 prefsRepo.setActiveFarmId(savedId)
             }
@@ -324,7 +349,7 @@ class SmartFarmViewModel(
         viewModelScope.launch {
             if (preferences.value.activeFarmId == farm.id) prefsRepo.setActiveFarmId(null)
             repository.deleteFarm(farm)
-            _snackbarMessage.value = "${farm.name} deleted."
+            _snackbarMessage.value = msg("${farm.name} deleted.", "${farm.name} মুছে ফেলা হয়েছে।")
         }
     }
 
@@ -333,7 +358,7 @@ class SmartFarmViewModel(
         val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.addCustomAnimalCategory(uid, name, isBird)
-            _snackbarMessage.value = "Added category: $name"
+            _snackbarMessage.value = msg("Added category: $name", "ক্যাটাগরি যোগ হয়েছে: $name")
         }
     }
 
@@ -341,14 +366,14 @@ class SmartFarmViewModel(
         val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.saveAnimalRecord(record.copy(ownerUserId = uid))
-            _snackbarMessage.value = "${record.name} saved."
+            _snackbarMessage.value = msg("${record.name} saved.", "${record.name} সংরক্ষিত হয়েছে।")
         }
     }
 
     fun deleteAnimalRecord(record: AnimalRecordEntity) {
         viewModelScope.launch {
             repository.deleteAnimalRecord(record)
-            _snackbarMessage.value = "${record.name} removed."
+            _snackbarMessage.value = msg("${record.name} removed.", "${record.name} মুছে ফেলা হয়েছে।")
         }
     }
 
@@ -361,7 +386,11 @@ class SmartFarmViewModel(
     ) {
         viewModelScope.launch {
             repository.recordAnimalEvent(animal, eventType, delta, costOrValue, description)
-            _snackbarMessage.value = "${eventType.label} recorded for ${animal.name}."
+            val eventLabel = DomainLocalization.animalEventType(eventType, isBn())
+            _snackbarMessage.value = msg(
+                "$eventLabel recorded for ${animal.name}.",
+                "${animal.name}-এর জন্য $eventLabel সংরক্ষিত হয়েছে।"
+            )
         }
     }
 
@@ -387,7 +416,11 @@ class SmartFarmViewModel(
                 soldCount = sold,
                 unitSellingPrice = unitPrice
             )
-            _snackbarMessage.value = "Egg production logged ($eggCategory)."
+            val catLabel = DomainLocalization.eggCategory(eggCategory, isBn())
+            _snackbarMessage.value = msg(
+                "Egg production logged ($catLabel).",
+                "ডিম উৎপাদন সংরক্ষিত হয়েছে ($catLabel)।"
+            )
         }
     }
 
@@ -400,7 +433,10 @@ class SmartFarmViewModel(
         val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.saveInventoryItem(item.copy(ownerUserId = uid))
-            _snackbarMessage.value = "${item.name} saved to inventory."
+            _snackbarMessage.value = msg(
+                "${item.name} saved to inventory.",
+                "${item.name} ইনভেন্টরিতে সংরক্ষিত হয়েছে।"
+            )
         }
     }
 
@@ -414,7 +450,11 @@ class SmartFarmViewModel(
     ) {
         viewModelScope.launch {
             repository.adjustInventoryStock(item, delta, isStockIn, unitCost, supplier, note)
-            _snackbarMessage.value = if (isStockIn) "Stock added to ${item.name}." else "Stock deducted from ${item.name}."
+            _snackbarMessage.value = if (isStockIn) {
+                msg("Stock added to ${item.name}.", "${item.name}-এ স্টক যোগ হয়েছে।")
+            } else {
+                msg("Stock deducted from ${item.name}.", "${item.name} থেকে স্টক কমানো হয়েছে।")
+            }
         }
     }
 
@@ -427,7 +467,10 @@ class SmartFarmViewModel(
         val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.saveCustomer(customer.copy(ownerUserId = uid))
-            _snackbarMessage.value = "Customer ${customer.name} saved."
+            _snackbarMessage.value = msg(
+                "Customer ${customer.name} saved.",
+                "গ্রাহক ${customer.name} সংরক্ষিত হয়েছে।"
+            )
         }
     }
 
@@ -457,14 +500,20 @@ class SmartFarmViewModel(
                 productCategory, productName, inventoryItem, animalRecord,
                 quantity, unitPrice, discount, paidAmount, paymentMethod
             )
-            _snackbarMessage.value = "Sale recorded (${sale.invoiceNumber})."
+            _snackbarMessage.value = msg(
+                "Sale recorded (${sale.invoiceNumber}).",
+                "বিক্রয় সংরক্ষিত হয়েছে (${sale.invoiceNumber})।"
+            )
         }
     }
 
     fun settleSaleDue(sale: SaleEntity, amount: Double) {
         viewModelScope.launch {
             repository.settleSaleDue(sale, amount)
-            _snackbarMessage.value = "Payment recorded on ${sale.invoiceNumber}."
+            _snackbarMessage.value = msg(
+                "Payment recorded on ${sale.invoiceNumber}.",
+                "${sale.invoiceNumber} এর বকেয়া পরিশোধিত হয়েছে।"
+            )
         }
     }
 
@@ -475,7 +524,10 @@ class SmartFarmViewModel(
     fun updateOrderStatus(order: OrderEntity, status: OrderStatus) {
         viewModelScope.launch {
             repository.updateOrderStatus(order, status)
-            _snackbarMessage.value = "Order ${order.orderNumber} marked ${status.label}."
+            _snackbarMessage.value = msg(
+                "Order ${order.orderNumber} marked ${status.label}.",
+                "অর্ডার ${order.orderNumber} আপডেট হয়েছে।"
+            )
         }
     }
 
@@ -492,7 +544,8 @@ class SmartFarmViewModel(
                     description = description
                 )
             )
-            _snackbarMessage.value = "Expense added ($category)."
+            val catLabel = DomainLocalization.expenseCategory(category, isBn())
+            _snackbarMessage.value = msg("Expense added ($catLabel).", "খরচ যোগ হয়েছে ($catLabel)।")
         }
     }
 
@@ -504,7 +557,10 @@ class SmartFarmViewModel(
         val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.saveEmployee(emp.copy(ownerUserId = uid))
-            _snackbarMessage.value = "Employee ${emp.name} saved."
+            _snackbarMessage.value = msg(
+                "Employee ${emp.name} saved.",
+                "কর্মচারী ${emp.name} সংরক্ষিত হয়েছে।"
+            )
         }
     }
 
@@ -515,14 +571,21 @@ class SmartFarmViewModel(
     fun markAttendance(emp: EmployeeEntity, status: AttendanceStatus) {
         viewModelScope.launch {
             repository.markEmployeeAttendance(emp, status)
-            _snackbarMessage.value = "${emp.name} marked ${status.label}."
+            val stLabel = DomainLocalization.attendanceStatus(status, isBn())
+            _snackbarMessage.value = msg(
+                "${emp.name} marked $stLabel.",
+                "${emp.name} কে '$stLabel' চিহ্নিত করা হয়েছে।"
+            )
         }
     }
 
     fun paySalary(emp: EmployeeEntity, amount: Double, monthLabel: String, note: String) {
         viewModelScope.launch {
             repository.payEmployeeSalary(emp, amount, monthLabel, note)
-            _snackbarMessage.value = "Salary paid to ${emp.name}."
+            _snackbarMessage.value = msg(
+                "Salary paid to ${emp.name}.",
+                "${emp.name} কে বেতন প্রদান করা হয়েছে।"
+            )
         }
     }
 
@@ -531,7 +594,10 @@ class SmartFarmViewModel(
         val user = currentUser.value ?: return
         viewModelScope.launch {
             repository.purchaseSubscription(user, plan, currencyCode, method, txRef)
-            _snackbarMessage.value = "Subscription processed for ${plan.name}."
+            _snackbarMessage.value = msg(
+                "Subscription processed for ${plan.name}.",
+                "${plan.name} সাবস্ক্রিপশন প্রক্রিয়া সম্পন্ন হয়েছে।"
+            )
         }
     }
 
@@ -549,7 +615,10 @@ class SmartFarmViewModel(
                 }
             }
         }
-        _snackbarMessage.value = "Added ${item.name} to cart."
+        _snackbarMessage.value = msg(
+            "Added ${item.name} to cart.",
+            "${item.name} কার্টে যোগ করা হয়েছে।"
+        )
     }
 
     fun updateCartQuantity(itemId: Long, delta: Double) {
@@ -578,10 +647,14 @@ class SmartFarmViewModel(
                 farmsMap = farmsMap
             ).onSuccess { orders ->
                 _cart.value = emptyList()
-                _snackbarMessage.value = "Order placed (${orders.joinToString { it.orderNumber }})!"
+                val orderNums = orders.joinToString { it.orderNumber }
+                _snackbarMessage.value = msg(
+                    "Order placed ($orderNums)!",
+                    "অর্ডার সম্পন্ন হয়েছে ($orderNums)!"
+                )
                 onSuccess()
             }.onFailure {
-                _snackbarMessage.value = it.message ?: "Failed to place order."
+                _snackbarMessage.value = it.message ?: msg("Failed to place order.", "অর্ডার করা যায়নি।")
             }
         }
     }
@@ -589,7 +662,10 @@ class SmartFarmViewModel(
     fun requestOrderCancellation(order: OrderEntity) {
         viewModelScope.launch {
             repository.requestOrderCancellation(order)
-            _snackbarMessage.value = "Cancellation request sent for ${order.orderNumber}."
+            _snackbarMessage.value = msg(
+                "Cancellation request sent for ${order.orderNumber}.",
+                "${order.orderNumber} বাতিলের অনুরোধ পাঠানো হয়েছে।"
+            )
         }
     }
 
@@ -598,8 +674,14 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminSetUserStatus(adminId, target, status)
-                .onSuccess { _snackbarMessage.value = "${target.name} set to ${status.name}." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess {
+                    val stLabel = DomainLocalization.accountStatus(status.name, isBn())
+                    _snackbarMessage.value = msg(
+                        "${target.name} set to ${status.name}.",
+                        "${target.name}-এর অবস্থা '$stLabel' করা হয়েছে।"
+                    )
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -607,8 +689,8 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminSaveSubscriptionPlan(adminId, plan)
-                .onSuccess { _snackbarMessage.value = "Plan ${plan.name} saved." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess { _snackbarMessage.value = msg("Plan ${plan.name} saved.", "প্ল্যান ${plan.name} সংরক্ষিত হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -616,8 +698,8 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminDeleteSubscriptionPlan(adminId, plan)
-                .onSuccess { _snackbarMessage.value = "Plan ${plan.name} deleted." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess { _snackbarMessage.value = msg("Plan ${plan.name} deleted.", "প্ল্যান ${plan.name} মুছে ফেলা হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -625,8 +707,13 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminUpdateSubscriptionPayment(adminId, sub, paymentStatus, subStatus)
-                .onSuccess { _snackbarMessage.value = "Subscription ${sub.transactionRef} updated." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Subscription ${sub.transactionRef} updated.",
+                        "সাবস্ক্রিপশন ${sub.transactionRef} আপডেট হয়েছে।"
+                    )
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -634,8 +721,13 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminGrantSubscription(adminId, target, plan)
-                .onSuccess { _snackbarMessage.value = "Granted ${plan.name} to ${target.name}." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Granted ${plan.name} to ${target.name}.",
+                        "${target.name} কে ${plan.name} প্ল্যান দেওয়া হয়েছে।"
+                    )
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -643,8 +735,8 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminBroadcastNotification(adminId, title, message)
-                .onSuccess { _snackbarMessage.value = "Announcement broadcast sent." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess { _snackbarMessage.value = msg("Announcement broadcast sent.", "ঘোষণা সবার কাছে পাঠানো হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -652,8 +744,8 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminUpdateSettings(adminId, settings)
-                .onSuccess { _snackbarMessage.value = "System settings saved." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess { _snackbarMessage.value = msg("System settings saved.", "সিস্টেম সেটিংস সংরক্ষিত হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 
@@ -661,8 +753,8 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminResolveSupport(adminId, req, reply)
-                .onSuccess { _snackbarMessage.value = "Support ticket resolved." }
-                .onFailure { _snackbarMessage.value = it.message ?: "Action denied." }
+                .onSuccess { _snackbarMessage.value = msg("Support ticket resolved.", "সাপোর্ট টিকিট সমাধান হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }
 

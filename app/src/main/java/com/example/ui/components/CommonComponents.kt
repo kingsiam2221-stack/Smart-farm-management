@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import com.example.data.local.FarmEntity
 import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -132,6 +135,7 @@ fun FarmSwitcherBar(
     onSelectFarm: (Long?) -> Unit
 ) {
     var showSheet by remember { mutableStateOf(false) }
+    val isBn = isBangla()
     val activeFarm = farms.find { it.id == selectedFarmId }
     val displayTitle = activeFarm?.let { "${it.name} (${it.farmCode})" } ?: "$allFarmsLabel (${farms.size})"
 
@@ -149,7 +153,7 @@ fun FarmSwitcherBar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.Agriculture, contentDescription = "Active Farm", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Agriculture, contentDescription = tr("Active Farm", "সক্রিয় খামার"), tint = MaterialTheme.colorScheme.primary)
                 Column {
                     Text(
                         displayTitle,
@@ -158,13 +162,16 @@ fun FarmSwitcherBar(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        activeFarm?.location ?: "Showing aggregated data across ${farms.size} farms",
+                        activeFarm?.location ?: tr(
+                            "Showing aggregated data across ${farms.size} farms",
+                            "সকল ${farms.size}টি খামারের সমন্বিত তথ্য দেখানো হচ্ছে"
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
                 }
             }
-            Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Farm", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.SwapHoriz, contentDescription = tr("Switch Farm", "খামার পরিবর্তন"), tint = MaterialTheme.colorScheme.primary)
         }
     }
 
@@ -172,13 +179,13 @@ fun FarmSwitcherBar(
         var search by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showSheet = false },
-            title = { Text("Select Active Farm (${farms.size})") },
+            title = { Text(tr("Select Active Farm (${farms.size})", "সক্রিয় খামার নির্বাচন করুন (${farms.size})")) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = search,
                         onValueChange = { search = it },
-                        placeholder = { Text("Search 1 to 100+ farms...") },
+                        placeholder = { Text(tr("Search 1 to 100+ farms...", "১ থেকে ১০০+ খামার খুঁজুন...")) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -188,7 +195,9 @@ fun FarmSwitcherBar(
                         item {
                             ListItem(
                                 headlineContent = { Text(allFarmsLabel, fontWeight = FontWeight.Bold) },
-                                supportingContent = { Text("Combined view of all ${farms.size} farms") },
+                                supportingContent = {
+                                    Text(tr("Combined view of all ${farms.size} farms", "সকল ${farms.size}টি খামারের যৌথ দৃশ্য"))
+                                },
                                 leadingContent = { Icon(Icons.Default.Dashboard, contentDescription = null) },
                                 trailingContent = { if (selectedFarmId == null) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                                 modifier = Modifier.clickable {
@@ -204,9 +213,10 @@ fun FarmSwitcherBar(
                                 it.location.contains(search, ignoreCase = true)
                         }
                         items(filtered, key = { it.id }) { farm ->
+                            val catLabel = DomainLocalization.farmCategory(farm.category, farm.customCategoryName, isBn)
                             ListItem(
                                 headlineContent = { Text(farm.name, fontWeight = FontWeight.SemiBold) },
-                                supportingContent = { Text("${farm.farmCode} • ${farm.location} • ${farm.category}") },
+                                supportingContent = { Text("${farm.farmCode} • ${farm.location} • $catLabel") },
                                 leadingContent = { Icon(Icons.Default.Eco, contentDescription = null) },
                                 trailingContent = { if (selectedFarmId == farm.id) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                                 modifier = Modifier.clickable {
@@ -219,7 +229,7 @@ fun FarmSwitcherBar(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showSheet = false }) { Text("Close") }
+                TextButton(onClick = { showSheet = false }) { Text(tr("Close", "বন্ধ করুন")) }
             }
         )
     }
@@ -237,14 +247,14 @@ fun LanguageCurrencyDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Language, Currency & Theme") },
+        title = { Text(tr("Language, Currency & Theme", "ভাষা, মুদ্রা ও থিম")) },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 420.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
-                    Text("Language / ভাষা", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("Language / ভাষা", "ভাষা / Language"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppLanguage.entries.forEach { lang ->
@@ -257,21 +267,21 @@ fun LanguageCurrencyDialog(
                     }
                 }
                 item {
-                    Text("Theme Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("Theme Appearance", "থিমের ধরন"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = darkModeOverride == false, onClick = { onSelectDarkMode(false) }, label = { Text("Light") })
-                        FilterChip(selected = darkModeOverride == true, onClick = { onSelectDarkMode(true) }, label = { Text("Dark") })
-                        FilterChip(selected = darkModeOverride == null, onClick = { onSelectDarkMode(null) }, label = { Text("Auto") })
+                        FilterChip(selected = darkModeOverride == false, onClick = { onSelectDarkMode(false) }, label = { Text(tr("Light", "লাইট")) })
+                        FilterChip(selected = darkModeOverride == true, onClick = { onSelectDarkMode(true) }, label = { Text(tr("Dark", "ডার্ক")) })
+                        FilterChip(selected = darkModeOverride == null, onClick = { onSelectDarkMode(null) }, label = { Text(tr("Auto", "অটো")) })
                     }
                 }
                 item {
-                    Text("Country & Currency", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("Country & Currency", "দেশ ও মুদ্রা"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
                 items(CurrencyOption.entries) { curr ->
                     ListItem(
                         headlineContent = { Text("${curr.symbol} ${curr.code} — ${curr.countryName}", fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text("Gateways: ${curr.gateways.joinToString(", ")}") },
+                        supportingContent = { Text("${tr("Gateways", "পেমেন্ট মাধ্যম")}: ${curr.gateways.joinToString(", ")}") },
                         trailingContent = {
                             RadioButton(selected = currentCurrency == curr, onClick = { onSelectCurrency(curr) })
                         },
@@ -281,7 +291,7 @@ fun LanguageCurrencyDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss) { Text("Done") }
+            Button(onClick = onDismiss) { Text(tr("Done", "সম্পন্ন")) }
         }
     )
 }

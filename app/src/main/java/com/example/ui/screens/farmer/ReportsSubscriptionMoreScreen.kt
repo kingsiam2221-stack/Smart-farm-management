@@ -27,6 +27,9 @@ import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.*
 import com.example.ui.state.FarmerDashboardState
 import com.example.util.ReportExportHelper
@@ -56,7 +59,13 @@ fun ReportsSubscriptionProfileScreen(
 ) {
     var tabIndex by remember(initialTab) { mutableIntStateOf(initialTab) }
     val unread = notifications.count { !it.readFlag }
-    val tabs = listOf(strings.reports, strings.subscription, if (unread > 0) "Alerts ($unread)" else "Alerts", strings.profile)
+    val alertsLabel = tr("Alerts", "সতর্কতা")
+    val tabs = listOf(
+        strings.reports,
+        strings.subscription,
+        if (unread > 0) "$alertsLabel ($unread)" else alertsLabel,
+        strings.profile
+    )
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tabIndex) {
@@ -94,6 +103,7 @@ private fun FinancialReportsTab(
     onMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val isBn = isBangla()
     val totalSales = state.sales.sumOf { it.totalAmount }
     val totalIncome = state.sales.sumOf { it.paidAmount }
     val totalDue = state.sales.sumOf { it.dueAmount }
@@ -110,7 +120,10 @@ private fun FinancialReportsTab(
                 Button(
                     onClick = {
                         ReportExportHelper.exportFinancialReportPdf(context, state.farms, state.sales, state.expenses, currency)
-                            .onFailure { onMessage("PDF export failed: ${it.message}") }
+                            .onFailure {
+                                val errPrefix = if (isBn) "পিডিএফ রপ্তানি ব্যর্থ: " else "PDF export failed: "
+                                onMessage("$errPrefix${it.message}")
+                            }
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -121,7 +134,10 @@ private fun FinancialReportsTab(
                 OutlinedButton(
                     onClick = {
                         ReportExportHelper.exportFinancialReportCsv(context, state.farms, state.sales, state.expenses, currency)
-                            .onFailure { onMessage("CSV export failed: ${it.message}") }
+                            .onFailure {
+                                val errPrefix = if (isBn) "সিএসভি রপ্তানি ব্যর্থ: " else "CSV export failed: "
+                                onMessage("$errPrefix${it.message}")
+                            }
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -134,8 +150,21 @@ private fun FinancialReportsTab(
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiMetricCard(strings.totalIncome, CurrencyFormatter.format(totalIncome, currency), Icons.Default.AttachMoney, subtitle = "Due: ${CurrencyFormatter.format(totalDue, currency)}", modifier = Modifier.weight(1f))
-                KpiMetricCard(strings.netProfitLoss, CurrencyFormatter.format(netProfit, currency), Icons.Default.TrendingUp, tint = if (netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, subtitle = "Exp: ${CurrencyFormatter.format(totalExp, currency)}", modifier = Modifier.weight(1f))
+                KpiMetricCard(
+                    strings.totalIncome,
+                    CurrencyFormatter.format(totalIncome, currency),
+                    Icons.Default.AttachMoney,
+                    subtitle = "${tr("Due", "বকেয়া")}: ${CurrencyFormatter.format(totalDue, currency)}",
+                    modifier = Modifier.weight(1f)
+                )
+                KpiMetricCard(
+                    strings.netProfitLoss,
+                    CurrencyFormatter.format(netProfit, currency),
+                    Icons.Default.TrendingUp,
+                    tint = if (netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    subtitle = "${tr("Exp", "খরচ")}: ${CurrencyFormatter.format(totalExp, currency)}",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 
@@ -146,7 +175,7 @@ private fun FinancialReportsTab(
                 DualBarEntry(farm.name.take(8), CurrencyFormatter.convertFromBase(fSales, currency), CurrencyFormatter.convertFromBase(fExp, currency))
             }
             DualBarComparisonChart(
-                title = "${strings.monthlySales} vs ${strings.monthlyExpenses}",
+                title = "${strings.monthlySales} ${tr("vs", "বনাম")} ${strings.monthlyExpenses}",
                 primaryLabel = strings.totalSales,
                 secondaryLabel = strings.totalExpenses,
                 entries = farmEntries
@@ -172,6 +201,7 @@ private fun SubscriptionTab(
     currency: CurrencyOption,
     onSubscribe: (SubscriptionPlanEntity, String, String, String) -> Unit
 ) {
+    val isBn = isBangla()
     var selectedPlan by remember { mutableStateOf<SubscriptionPlanEntity?>(null) }
     val activeSub = state.subscriptions.firstOrNull { it.status == "ACTIVE" }
 
@@ -188,26 +218,37 @@ private fun SubscriptionTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        if (activeSub != null) "Active Plan: ${activeSub.planName}" else "No Active Subscription",
+                        if (activeSub != null) "${tr("Active Plan", "সক্রিয় প্ল্যান")}: ${activeSub.planName}"
+                        else tr("No Active Subscription", "কোনো সক্রিয় সাবস্ক্রিপশন নেই"),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     if (activeSub != null) {
                         Text(
-                            "Started: ${formatShortDate(activeSub.startDate)} • Expires: ${formatShortDate(activeSub.expiryDate)}",
+                            "${tr("Started", "শুরু")}: ${formatShortDate(activeSub.startDate)} • ${tr("Expires", "মেয়াদ শেষ")}: ${formatShortDate(activeSub.expiryDate)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     } else {
-                        Text("Choose a plan below to activate or renew your subscription.", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            tr(
+                                "Choose a plan below to activate or renew your subscription.",
+                                "আপনার সাবস্ক্রিপশন চালু বা নবায়ন করতে নিচে থেকে একটি প্ল্যান বেছে নিন।"
+                            ),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }
         }
 
         item {
-            Text("Available Plans (${currency.countryName})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "${tr("Available Plans", "উপলব্ধ প্ল্যান")} (${currency.countryName})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         items(plans.filter { it.active }, key = { it.id }) { plan ->
@@ -222,24 +263,27 @@ private fun SubscriptionTab(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
-                    Text("${plan.durationDays} days • ${plan.description}", style = MaterialTheme.typography.bodyMedium)
+                    Text("${plan.durationDays} ${tr("days", "দিন")} • ${plan.description}", style = MaterialTheme.typography.bodyMedium)
                     Text(plan.featuresSummary, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = { selectedPlan = plan }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (activeSub != null) "Renew / Switch Plan" else "Select & Pay")
+                        Text(
+                            if (activeSub != null) tr("Renew / Switch Plan", "প্ল্যান নবায়ন / পরিবর্তন")
+                            else tr("Select & Pay", "নির্বাচন ও পেমেন্ট করুন")
+                        )
                     }
                 }
             }
         }
 
         item {
-            Text("Payment & Subscription History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(tr("Payment & Subscription History", "পেমেন্ট ও সাবস্ক্রিপশন ইতিহাস"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
         items(state.subscriptions, key = { it.id }) { sub ->
             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text("${sub.planName} (${sub.status})", fontWeight = FontWeight.Bold)
-                        Text("${sub.paymentMethod} • Ref: ${sub.transactionRef} • Exp: ${formatShortDate(sub.expiryDate)}", style = MaterialTheme.typography.labelSmall)
+                        Text("${sub.planName} (${DomainLocalization.subscriptionStatus(sub.status, isBn)})", fontWeight = FontWeight.Bold)
+                        Text("${DomainLocalization.paymentMethod(sub.paymentMethod, isBn)} • ${tr("Ref", "রেফ")}: ${sub.transactionRef} • ${tr("Exp", "মেয়াদ")}: ${formatShortDate(sub.expiryDate)}", style = MaterialTheme.typography.labelSmall)
                     }
                     Text(CurrencyFormatter.format(sub.pricePaidBdt, currency), fontWeight = FontWeight.Bold)
                 }
@@ -253,29 +297,32 @@ private fun SubscriptionTab(
         var txRef by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { selectedPlan = null },
-            title = { Text("Checkout: ${plan.name}") },
+            title = { Text("${tr("Checkout", "চেকআউট")}: ${plan.name}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Payable: ${CurrencyFormatter.format(plan.priceBaseBdt, currency)} (${plan.durationDays} days)",
+                        "${tr("Payable", "পরিশোধযোগ্য")}: ${CurrencyFormatter.format(plan.priceBaseBdt, currency)} (${plan.durationDays} ${tr("days", "দিন")})",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Text("Country Gateways (${currency.countryName}):", style = MaterialTheme.typography.labelLarge)
+                    Text("${tr("Country Gateways", "পেমেন্ট গেটওয়ে")} (${currency.countryName}):", style = MaterialTheme.typography.labelLarge)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(currency.gateways) { gw ->
-                            FilterChip(selected = gateway == gw, onClick = { gateway = gw }, label = { Text(gw) })
+                            FilterChip(selected = gateway == gw, onClick = { gateway = gw }, label = { Text(DomainLocalization.paymentMethod(gw, isBn)) })
                         }
                     }
                     OutlinedTextField(
                         value = txRef,
                         onValueChange = { txRef = it },
-                        label = { Text("Transaction Ref / Wallet # (optional)") },
+                        label = { Text(tr("Transaction Ref / Wallet # (optional)", "ট্রানজেকশন নম্বর / ওয়ালেট (ঐচ্ছিক)")) },
                         singleLine = true
                     )
                     if (gateway.contains("Manual", ignoreCase = true)) {
                         Text(
-                            "Manual verification payments enter PENDING status until approved by Super Admin.",
+                            tr(
+                                "Manual verification payments enter PENDING status until approved by Super Admin.",
+                                "ম্যানুয়াল পেমেন্ট সুপার অ্যাডমিন অনুমোদন না করা পর্যন্ত অপেক্ষমাণ (PENDING) থাকবে।"
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.tertiary
                         )
@@ -286,7 +333,7 @@ private fun SubscriptionTab(
                 Button(onClick = {
                     onSubscribe(plan, currency.code, gateway, txRef)
                     selectedPlan = null
-                }) { Text("Confirm Payment") }
+                }) { Text(tr("Confirm Payment", "পেমেন্ট নিশ্চিত করুন")) }
             },
             dismissButton = { TextButton(onClick = { selectedPlan = null }) { Text(strings.cancel) } }
         )
@@ -300,6 +347,7 @@ private fun NotificationsAndSupportTab(
     onMarkRead: () -> Unit,
     onSubmitSupport: (String, String) -> Unit
 ) {
+    val isBn = isBangla()
     var showSupportDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -309,10 +357,10 @@ private fun NotificationsAndSupportTab(
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Notifications (${notifications.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("${tr("Notifications", "নোটিফিকেশন")} (${notifications.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row {
-                    TextButton(onClick = onMarkRead) { Text("Mark All Read") }
-                    FilledTonalButton(onClick = { showSupportDialog = true }) { Text("Contact Support") }
+                    TextButton(onClick = onMarkRead) { Text(tr("Mark All Read", "সব পঠিত চিহ্নিত করুন")) }
+                    FilledTonalButton(onClick = { showSupportDialog = true }) { Text(tr("Contact Support", "সাপোর্টে যোগাযোগ")) }
                 }
             }
         }
@@ -336,15 +384,16 @@ private fun NotificationsAndSupportTab(
         if (supportRequests.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(6.dp))
-                Text("Your Support Tickets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(tr("Your Support Tickets", "আপনার সাপোর্ট টিকিট"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             items(supportRequests, key = { it.id }) { req ->
+                val stLabel = if (req.status == "OPEN") tr("OPEN", "খোলা") else tr("RESOLVED", "সমাধান হয়েছে")
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("${req.subject} (${req.status})", fontWeight = FontWeight.Bold)
+                        Text("${req.subject} ($stLabel)", fontWeight = FontWeight.Bold)
                         Text(req.message, style = MaterialTheme.typography.bodyMedium)
                         if (req.adminReply.isNotBlank()) {
-                            Text("Admin Reply: ${req.adminReply}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                            Text("${tr("Admin Reply", "অ্যাডমিন উত্তর")}: ${req.adminReply}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -357,20 +406,20 @@ private fun NotificationsAndSupportTab(
         var msg by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showSupportDialog = false },
-            title = { Text("Submit Support Request") },
+            title = { Text(tr("Submit Support Request", "সাপোর্ট অনুরোধ পাঠান")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text("Subject *") }, singleLine = true)
-                    OutlinedTextField(value = msg, onValueChange = { msg = it }, label = { Text("Message *") })
+                    OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text(tr("Subject *", "বিষয় *")) }, singleLine = true)
+                    OutlinedTextField(value = msg, onValueChange = { msg = it }, label = { Text(tr("Message *", "বার্তা *")) })
                 }
             },
             confirmButton = {
                 Button(enabled = subject.isNotBlank() && msg.isNotBlank(), onClick = {
                     onSubmitSupport(subject, msg)
                     showSupportDialog = false
-                }) { Text("Send") }
+                }) { Text(tr("Send", "পাঠান")) }
             },
-            dismissButton = { TextButton(onClick = { showSupportDialog = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showSupportDialog = false }) { Text(if (isBn) "বাতিল" else "Cancel") } }
         )
     }
 }
@@ -390,6 +439,7 @@ private fun ProfileSettingsTab(
     onUpdateProfile: (String, String, String?) -> Unit,
     onLogout: () -> Unit
 ) {
+    val isBn = isBangla()
     var name by remember(user.id) { mutableStateOf(user.name) }
     var mobile by remember(user.id) { mutableStateOf(user.mobile) }
     var imageUri by remember(user.id) { mutableStateOf(user.profileImageUri) }
@@ -420,11 +470,15 @@ private fun ProfileSettingsTab(
                     OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Upload Profile Picture")
+                        Text(tr("Upload Profile Picture", "প্রোফাইল ছবি আপলোড"))
                     }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Full Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text("Mobile Number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("Email: ${user.email} • Role: ${user.role}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Full Name", "পূর্ণ নাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile Number", "মোবাইল নম্বর")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        "${tr("Email", "ইমেইল")}: ${user.email} • ${tr("Role", "ভূমিকা")}: ${DomainLocalization.userRole(user.role, isBn)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Button(onClick = { onUpdateProfile(name, mobile, imageUri) }, modifier = Modifier.fillMaxWidth()) {
                         Text(strings.save)
                     }
@@ -435,7 +489,7 @@ private fun ProfileSettingsTab(
         item {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Internationalization & Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("Internationalization & Appearance", "ভাষা, মুদ্রা ও থিম"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     FilledTonalButton(onClick = { showLangCurrDialog = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Language, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -444,7 +498,7 @@ private fun ProfileSettingsTab(
                     OutlinedButton(onClick = { showLabelEditor = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Translate, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Customize App Labels / Terminology")
+                        Text(tr("Customize App Labels / Terminology", "অ্যাপের নাম ও ট্যাব শিরোনাম পরিবর্তন"))
                     }
                 }
             }
@@ -481,13 +535,19 @@ private fun ProfileSettingsTab(
         var customFarms by remember { mutableStateOf(languageOverrides["farms"] ?: "") }
         AlertDialog(
             onDismissRequest = { showLabelEditor = false },
-            title = { Text("Customize App Terminology") },
+            title = { Text(tr("Customize App Terminology", "অ্যাপের শিরোনাম কাস্টমাইজ করুন")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Leave blank to use default ${currentLanguage.displayName} text.", style = MaterialTheme.typography.labelSmall)
-                    OutlinedTextField(value = customAppName, onValueChange = { customAppName = it }, label = { Text("App Title") }, singleLine = true)
-                    OutlinedTextField(value = customDash, onValueChange = { customDash = it }, label = { Text("Dashboard Tab") }, singleLine = true)
-                    OutlinedTextField(value = customFarms, onValueChange = { customFarms = it }, label = { Text("Farms Tab") }, singleLine = true)
+                    Text(
+                        tr(
+                            "Leave blank to use default ${currentLanguage.displayName} text.",
+                            "ডিফল্ট ${currentLanguage.nativeName} লেখা ব্যবহার করতে ফাঁকা রাখুন।"
+                        ),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    OutlinedTextField(value = customAppName, onValueChange = { customAppName = it }, label = { Text(tr("App Title", "অ্যাপের নাম")) }, singleLine = true)
+                    OutlinedTextField(value = customDash, onValueChange = { customDash = it }, label = { Text(tr("Dashboard Tab", "ড্যাশবোর্ড ট্যাব")) }, singleLine = true)
+                    OutlinedTextField(value = customFarms, onValueChange = { customFarms = it }, label = { Text(tr("Farms Tab", "খামার ট্যাব")) }, singleLine = true)
                 }
             },
             confirmButton = {

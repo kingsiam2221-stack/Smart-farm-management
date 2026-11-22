@@ -32,6 +32,9 @@ import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.LanguageCurrencyDialog
 import com.example.ui.components.formatShortDate
@@ -111,7 +114,16 @@ fun CustomerPortalScreen(
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     when (selectedTab) {
-                        0 -> ShopCatalogTab(state, strings, currentCurrency, onAddToCart)
+                        0 -> ShopCatalogTab(
+                            state = state,
+                            strings = strings,
+                            currentLanguage = currentLanguage,
+                            currency = currentCurrency,
+                            onToggleLanguage = {
+                                onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
+                            },
+                            onAddToCart = onAddToCart
+                        )
                         1 -> CartCheckoutTab(state, strings, currentCurrency, onUpdateCartQty) { addr, method ->
                             onPlaceOrder(addr, method) { selectedTab = 2 }
                         }
@@ -131,9 +143,12 @@ fun CustomerPortalScreen(
 private fun ShopCatalogTab(
     state: CustomerPortalState,
     strings: AppStrings,
+    currentLanguage: AppLanguage,
     currency: CurrencyOption,
+    onToggleLanguage: () -> Unit,
     onAddToCart: (InventoryItemEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var search by remember { mutableStateOf("") }
     var selectedCat by remember { mutableStateOf<String?>(null) }
     val categories = remember(state.marketplaceItems) { state.marketplaceItems.map { it.category }.distinct() }
@@ -151,21 +166,49 @@ private fun ShopCatalogTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Box(modifier = Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(18.dp))) {
+            Box(modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(18.dp))) {
                 Image(
                     painter = painterResource(id = R.drawable.img_marketplace_fresh),
-                    contentDescription = "Farm Marketplace",
+                    contentDescription = tr("Farm Marketplace", "খামার বাজার"),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
                 Box(
                     modifier = Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF0E3E16).copy(alpha = 0.85f)))
+                        Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color(0xFF0E3E16).copy(alpha = 0.88f)))
                     )
                 )
+                AssistChip(
+                    onClick = onToggleLanguage,
+                    label = {
+                        Text(
+                            if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Default.Translate, contentDescription = strings.language, modifier = Modifier.size(16.dp)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = Color.White.copy(alpha = 0.92f),
+                        labelColor = Color(0xFF0E3E16),
+                        leadingIconContentColor = Color(0xFF0E3E16)
+                    ),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                )
                 Column(modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                    Text("Farm-to-Table Marketplace", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Direct fresh eggs, dairy, meat & produce from local farms", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.9f))
+                    Text(
+                        tr("Farm-to-Table Marketplace", "খামার থেকে সরাসরি বাজার"),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        tr(
+                            "Direct fresh eggs, dairy, meat & produce from local farms",
+                            "স্থানীয় খামার থেকে তাজা ডিম, দুধ, মাংস ও খামার পণ্য"
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -179,9 +222,13 @@ private fun ShopCatalogTab(
             )
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { FilterChip(selected = selectedCat == null, onClick = { selectedCat = null }, label = { Text("All") }) }
+                item { FilterChip(selected = selectedCat == null, onClick = { selectedCat = null }, label = { Text(tr("All", "সব")) }) }
                 items(categories) { cat ->
-                    FilterChip(selected = selectedCat == cat, onClick = { selectedCat = if (selectedCat == cat) null else cat }, label = { Text(cat) })
+                    FilterChip(
+                        selected = selectedCat == cat,
+                        onClick = { selectedCat = if (selectedCat == cat) null else cat },
+                        label = { Text(DomainLocalization.productCategory(cat, isBn)) }
+                    )
                 }
             }
         }
@@ -190,19 +237,26 @@ private fun ShopCatalogTab(
             item {
                 EmptyStateCard(
                     icon = Icons.Default.Storefront,
-                    title = "No Products Listed",
-                    subtitle = "Farmers can list Eggs, Milk, Meat, and Produce from Inventory."
+                    title = tr("No Products Listed", "কোনো পণ্য তালিকাভুক্ত নেই"),
+                    subtitle = tr(
+                        "Farmers can list Eggs, Milk, Meat, and Produce from Inventory.",
+                        "খামারিরা ইনভেন্টরি থেকে ডিম, দুধ, মাংস ও অন্যান্য পণ্য তালিকায় যোগ করতে পারেন।"
+                    )
                 )
             }
         } else {
             items(filtered, key = { it.id }) { item ->
-                val farmName = state.farmsById[item.farmId]?.name ?: "Local Farm"
+                val farmName = state.farmsById[item.farmId]?.name ?: tr("Local Farm", "স্থানীয় খামার")
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("$farmName • ${item.category}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "$farmName • ${DomainLocalization.productCategory(item.category, isBn)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                             Text(
                                 CurrencyFormatter.format(item.sellingPrice, currency),
@@ -215,11 +269,11 @@ private fun ShopCatalogTab(
                             Text(item.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Available: ${item.quantity.toInt()} ${item.unit}", style = MaterialTheme.typography.labelSmall)
+                            Text("${tr("Available", "মজুদ")}: ${item.quantity.toInt()} ${item.unit}", style = MaterialTheme.typography.labelSmall)
                             Button(onClick = { onAddToCart(item) }) {
                                 Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Add to Cart")
+                                Text(tr("Add to Cart", "কার্টে যোগ করুন"))
                             }
                         }
                     }
@@ -237,6 +291,7 @@ private fun CartCheckoutTab(
     onUpdateQty: (Long, Double) -> Unit,
     onCheckout: (String, String) -> Unit
 ) {
+    val isBn = isBangla()
     var address by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf(currency.gateways.firstOrNull() ?: "Cash on Delivery") }
     val total = state.cart.sumOf { it.item.sellingPrice * it.quantity }
@@ -253,8 +308,11 @@ private fun CartCheckoutTab(
             item {
                 EmptyStateCard(
                     icon = Icons.Default.ShoppingCart,
-                    title = "Your Cart Is Empty",
-                    subtitle = "Browse farm-fresh products in the Shop tab and add items to checkout."
+                    title = tr("Your Cart Is Empty", "আপনার কার্ট খালি"),
+                    subtitle = tr(
+                        "Browse farm-fresh products in the Shop tab and add items to checkout.",
+                        "বাজার ট্যাব থেকে তাজা খামার পণ্য কার্টে যোগ করে অর্ডার করুন।"
+                    )
                 )
             }
         } else {
@@ -266,9 +324,13 @@ private fun CartCheckoutTab(
                             Text("${CurrencyFormatter.format(entry.item.sellingPrice, currency)} / ${entry.item.unit}", style = MaterialTheme.typography.labelSmall)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { onUpdateQty(entry.item.id, -1.0) }) { Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Decrease") }
+                            IconButton(onClick = { onUpdateQty(entry.item.id, -1.0) }) {
+                                Icon(Icons.Default.RemoveCircleOutline, contentDescription = tr("Decrease", "কমান"))
+                            }
                             Text("${entry.quantity.toInt()}", fontWeight = FontWeight.Bold)
-                            IconButton(onClick = { onUpdateQty(entry.item.id, 1.0) }) { Icon(Icons.Default.AddCircleOutline, contentDescription = "Increase") }
+                            IconButton(onClick = { onUpdateQty(entry.item.id, 1.0) }) {
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = tr("Increase", "বাড়ান"))
+                            }
                         }
                     }
                 }
@@ -280,18 +342,22 @@ private fun CartCheckoutTab(
                         OutlinedTextField(
                             value = address,
                             onValueChange = { address = it },
-                            label = { Text("Delivery Address *") },
+                            label = { Text(tr("Delivery Address *", "ডেলিভারির ঠিকানা *")) },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Text("Payment Method", style = MaterialTheme.typography.labelLarge)
+                        Text(tr("Payment Method", "পেমেন্ট পদ্ধতি"), style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(listOf("Cash on Delivery") + currency.gateways) { gw ->
-                                FilterChip(selected = paymentMethod == gw, onClick = { paymentMethod = gw }, label = { Text(gw) })
+                                FilterChip(
+                                    selected = paymentMethod == gw,
+                                    onClick = { paymentMethod = gw },
+                                    label = { Text(DomainLocalization.paymentMethod(gw, isBn)) }
+                                )
                             }
                         }
                         HorizontalDivider()
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Order Total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(tr("Order Total", "মোট মূল্য"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(CurrencyFormatter.format(total, currency), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                         Button(
@@ -317,6 +383,7 @@ private fun CustomerOrdersTab(
     currency: CurrencyOption,
     onRequestCancel: (OrderEntity) -> Unit
 ) {
+    val isBn = isBangla()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -329,8 +396,11 @@ private fun CustomerOrdersTab(
             item {
                 EmptyStateCard(
                     icon = Icons.Default.LocalShipping,
-                    title = "No Orders Yet",
-                    subtitle = "Your online farm orders and delivery tracking will appear here."
+                    title = tr("No Orders Yet", "এখনও কোনো অর্ডার নেই"),
+                    subtitle = tr(
+                        "Your online farm orders and delivery tracking will appear here.",
+                        "আপনার অনলাইন অর্ডার এবং ডেলিভারি অবস্থা এখানে দেখা যাবে।"
+                    )
                 )
             }
         } else {
@@ -349,20 +419,28 @@ private fun CustomerOrdersTab(
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("${order.orderNumber} • ${order.farmName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            AssistChip(onClick = {}, label = { Text(status.label, fontWeight = FontWeight.Bold) })
+                            AssistChip(onClick = {}, label = { Text(DomainLocalization.orderStatus(status, isBn), fontWeight = FontWeight.Bold) })
                         }
                         Text(order.itemsSummary, style = MaterialTheme.typography.bodyMedium)
-                        Text("Address: ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Total: ${CurrencyFormatter.format(order.totalAmount, currency)} (${order.paymentMethod}) • ${formatShortDate(order.createdAt)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("${tr("Address", "ঠিকানা")}: ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)}) • ${formatShortDate(order.createdAt)}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         if (status != OrderStatus.CANCELLED) {
                             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                         }
                         if (status == OrderStatus.PENDING || status == OrderStatus.CONFIRMED) {
                             if (order.cancellationRequested) {
-                                Text("Cancellation requested (awaiting farm review)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                Text(
+                                    tr("Cancellation requested (awaiting farm review)", "বাতিলের অনুরোধ পাঠানো হয়েছে (অনুমোদনের অপেক্ষায়)"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
                             } else {
                                 OutlinedButton(onClick = { onRequestCancel(order) }) {
-                                    Text("Request Cancellation")
+                                    Text(tr("Request Cancellation", "অর্ডার বাতিলের অনুরোধ"))
                                 }
                             }
                         }
@@ -412,9 +490,11 @@ private fun CustomerProfileTab(
                             Box(contentAlignment = Alignment.Center) { Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
                         }
                     }
-                    OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Change Photo") }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text("Mobile") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                        Text(tr("Change Photo", "ছবি পরিবর্তন করুন"))
+                    }
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Name", "নাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile", "মোবাইল নম্বর")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(onClick = { onUpdateProfile(name, mobile, imageUri) }, modifier = Modifier.fillMaxWidth()) { Text(strings.save) }
                     FilledTonalButton(onClick = { showSettings = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Language, contentDescription = null)
@@ -432,7 +512,7 @@ private fun CustomerProfileTab(
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(strings.notifications, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                TextButton(onClick = onMarkRead) { Text("Mark Read") }
+                TextButton(onClick = onMarkRead) { Text(tr("Mark Read", "পঠিত চিহ্নিত")) }
             }
         }
         items(notifications, key = { it.id }) { n ->

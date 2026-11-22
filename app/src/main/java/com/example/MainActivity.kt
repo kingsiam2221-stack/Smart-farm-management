@@ -24,6 +24,7 @@ import com.example.data.local.UserRole
 import com.example.data.repository.FarmRepository
 import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyOption
+import com.example.i18n.LocalAppLanguage
 import com.example.i18n.Localization
 import com.example.ui.screens.admin.SuperAdminDashboardScreen
 import com.example.ui.screens.auth.AuthScreen
@@ -70,11 +71,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            SmartFarmTheme(darkTheme = darkTheme) {
-                Scaffold(
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    snackbarHost = { SnackbarHost(snackbarHostState) }
-                ) { outerPadding ->
+            CompositionLocalProvider(LocalAppLanguage provides language) {
+                SmartFarmTheme(darkTheme = darkTheme) {
+                    Scaffold(
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        snackbarHost = { SnackbarHost(snackbarHostState) }
+                    ) { outerPadding ->
                     Box(modifier = Modifier.fillMaxSize().padding(outerPadding)) {
                         if (!isInitialized) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -167,6 +169,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -314,7 +317,10 @@ private fun FarmerShell(
                                 onOpenSales = { section = FarmerSection.COMMERCE },
                                 onOpenNotifications = { moreInitialTab = 2; section = FarmerSection.MORE },
                                 onOpenSubscription = { moreInitialTab = 1; section = FarmerSection.MORE },
-                                onOpenAiAdvisor = { showAiAdvisor = true }
+                                onOpenAiAdvisor = { showAiAdvisor = true },
+                                onToggleLanguage = {
+                                    viewModel.setLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
+                                }
                             )
 
                             FarmerSection.FARMS -> FarmsScreen(

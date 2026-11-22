@@ -29,6 +29,9 @@ import com.example.data.local.*
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FarmSwitcherBar
 import com.example.ui.components.KpiMetricCard
@@ -52,7 +55,12 @@ fun CommerceScreen(
 ) {
     var tabIndex by remember { mutableIntStateOf(0) }
     val pendingOrders = state.incomingOrders.count { it.status == OrderStatus.PENDING.name }
-    val tabs = listOf("Sales", "Customers", if (pendingOrders > 0) "Orders ($pendingOrders)" else "Orders")
+    val ordersTitle = tr("Orders", "অর্ডার")
+    val tabs = listOf(
+        tr("Sales", "বিক্রয়"),
+        tr("Customers", "গ্রাহক"),
+        if (pendingOrders > 0) "$ordersTitle ($pendingOrders)" else ordersTitle
+    )
 
     Column(modifier = Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tabIndex) {
@@ -79,6 +87,7 @@ private fun SalesTab(
     onDeleteSale: (SaleEntity) -> Unit,
     onMessage: (String) -> Unit
 ) {
+    val isBn = isBangla()
     val context = LocalContext.current
     var showCreate by remember { mutableStateOf(false) }
     var invoiceSale by remember { mutableStateOf<SaleEntity?>(null) }
@@ -111,8 +120,21 @@ private fun SalesTab(
                 FarmSwitcherBar(state.farms, state.selectedFarmId, strings.allFarms, onSelectFarm)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricCard(strings.totalSales, CurrencyFormatter.formatCompact(totalSales, currency), Icons.Default.PointOfSale, subtitle = "Paid: ${CurrencyFormatter.formatCompact(totalPaid, currency)}", modifier = Modifier.weight(1f))
-                    KpiMetricCard(strings.outstandingPayments, CurrencyFormatter.formatCompact(totalDue, currency), Icons.Default.AccountBalanceWallet, tint = if (totalDue > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, subtitle = "${filteredSales.size} invoices", modifier = Modifier.weight(1f))
+                    KpiMetricCard(
+                        strings.totalSales,
+                        CurrencyFormatter.formatCompact(totalSales, currency),
+                        Icons.Default.PointOfSale,
+                        subtitle = "${tr("Paid", "পরিশোধিত")}: ${CurrencyFormatter.formatCompact(totalPaid, currency)}",
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiMetricCard(
+                        strings.outstandingPayments,
+                        CurrencyFormatter.formatCompact(totalDue, currency),
+                        Icons.Default.AccountBalanceWallet,
+                        tint = if (totalDue > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        subtitle = "${filteredSales.size} ${tr("invoices", "টি ইনভয়েস")}",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
@@ -120,15 +142,19 @@ private fun SalesTab(
                 item {
                     EmptyStateCard(
                         icon = Icons.Default.PointOfSale,
-                        title = "No Sales Yet",
-                        subtitle = "Sell livestock, poultry, eggs, milk, meat, or farm produce.",
+                        title = tr("No Sales Yet", "এখনও কোনো বিক্রয় নেই"),
+                        subtitle = tr(
+                            "Sell livestock, poultry, eggs, milk, meat, or farm produce.",
+                            "পশু, মুরগি, ডিম, দুধ, মাংস বা খামারের পণ্য বিক্রি করুন।"
+                        ),
                         actionLabel = strings.newSale,
                         onAction = { showCreate = true }
                     )
                 }
             } else {
                 items(filteredSales, key = { it.id }) { sale ->
-                    val farmName = farmsMap[sale.farmId]?.name ?: "Farm"
+                    val farmName = farmsMap[sale.farmId]?.name ?: tr("Farm", "খামার")
+                    val payMethodDisp = DomainLocalization.paymentMethod(sale.paymentMethod, isBn)
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -139,18 +165,18 @@ private fun SalesTab(
                                 Text(CurrencyFormatter.format(sale.totalAmount, currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             }
                             Text(
-                                "Qty: ${sale.quantity} • Paid: ${CurrencyFormatter.format(sale.paidAmount, currency)} • Due: ${CurrencyFormatter.format(sale.dueAmount, currency)} • ${sale.paymentMethod} • ${formatShortDate(sale.saleDate)}",
+                                "${tr("Qty", "পরিমাণ")}: ${sale.quantity} • ${tr("Paid", "জমা")}: ${CurrencyFormatter.format(sale.paidAmount, currency)} • ${tr("Due", "বকেয়া")}: ${CurrencyFormatter.format(sale.dueAmount, currency)} • $payMethodDisp • ${formatShortDate(sale.saleDate)}",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(onClick = { invoiceSale = sale }, modifier = Modifier.weight(1f)) {
                                     Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Invoice / PDF")
+                                    Text(tr("Invoice / PDF", "ইনভয়েস / পিডিএফ"))
                                 }
                                 if (sale.dueAmount > 0.0) {
                                     OutlinedButton(onClick = { settleTarget = sale }, modifier = Modifier.weight(1f)) {
-                                        Text("Collect Due")
+                                        Text(tr("Collect Due", "বকেয়া আদায়"))
                                     }
                                 }
                                 IconButton(onClick = { onDeleteSale(sale) }) {
@@ -184,37 +210,38 @@ private fun SalesTab(
 
     if (invoiceSale != null) {
         val sale = invoiceSale!!
-        val farmName = farmsMap[sale.farmId]?.name ?: "Smart Farm"
+        val farmName = farmsMap[sale.farmId]?.name ?: tr("Smart Farm", "স্মার্ট ফার্ম")
         AlertDialog(
             onDismissRequest = { invoiceSale = null },
-            title = { Text("Invoice ${sale.invoiceNumber}") },
+            title = { Text("${tr("Invoice", "ইনভয়েস")} ${sale.invoiceNumber}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Farm: $farmName", fontWeight = FontWeight.Bold)
-                    Text("Customer: ${sale.customerName} (${sale.customerPhone})")
-                    Text("Date: ${formatShortDate(sale.saleDate)}")
+                    Text("${tr("Farm", "খামার")}: $farmName", fontWeight = FontWeight.Bold)
+                    Text("${tr("Customer", "গ্রাহক")}: ${sale.customerName} (${sale.customerPhone})")
+                    Text("${tr("Date", "তারিখ")}: ${formatShortDate(sale.saleDate)}")
                     HorizontalDivider()
-                    Text("${sale.productName} (${sale.productCategory})")
-                    Text("Qty: ${sale.quantity} × ${CurrencyFormatter.format(sale.unitPrice, currency)}")
-                    Text("Discount: ${CurrencyFormatter.format(sale.discount, currency)}")
-                    Text("Net Total: ${CurrencyFormatter.format(sale.totalAmount, currency)}", fontWeight = FontWeight.Bold)
-                    Text("Paid: ${CurrencyFormatter.format(sale.paidAmount, currency)}")
-                    Text("Due: ${CurrencyFormatter.format(sale.dueAmount, currency)}", color = if (sale.dueAmount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                    Text("Method: ${sale.paymentMethod}")
+                    Text("${sale.productName} (${DomainLocalization.productCategory(sale.productCategory, isBn)})")
+                    Text("${tr("Qty", "পরিমাণ")}: ${sale.quantity} × ${CurrencyFormatter.format(sale.unitPrice, currency)}")
+                    Text("${tr("Discount", "ছাড়")}: ${CurrencyFormatter.format(sale.discount, currency)}")
+                    Text("${tr("Net Total", "মোট মূল্য")}: ${CurrencyFormatter.format(sale.totalAmount, currency)}", fontWeight = FontWeight.Bold)
+                    Text("${tr("Paid", "পরিশোধিত")}: ${CurrencyFormatter.format(sale.paidAmount, currency)}")
+                    Text("${tr("Due", "বকেয়া")}: ${CurrencyFormatter.format(sale.dueAmount, currency)}", color = if (sale.dueAmount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                    Text("${tr("Method", "পেমেন্ট মাধ্যম")}: ${DomainLocalization.paymentMethod(sale.paymentMethod, isBn)}")
                 }
             },
             confirmButton = {
+                val exportFailMsg = tr("Unable to export PDF", "পিডিএফ তৈরি করা যায়নি")
                 Button(onClick = {
                     ReportExportHelper.exportInvoicePdf(context, sale, farmName, currency)
-                        .onFailure { onMessage("Unable to export PDF: ${it.message}") }
+                        .onFailure { onMessage("$exportFailMsg: ${it.message}") }
                     invoiceSale = null
                 }) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Download / Print PDF")
+                    Text(tr("Download / Print PDF", "পিডিএফ ডাউনলোড"))
                 }
             },
-            dismissButton = { TextButton(onClick = { invoiceSale = null }) { Text("Close") } }
+            dismissButton = { TextButton(onClick = { invoiceSale = null }) { Text(tr("Close", "বন্ধ করুন")) } }
         )
     }
 
@@ -223,12 +250,12 @@ private fun SalesTab(
         var amtText by remember { mutableStateOf(CurrencyFormatter.convertFromBase(s.dueAmount, currency).toInt().toString()) }
         AlertDialog(
             onDismissRequest = { settleTarget = null },
-            title = { Text("Collect Due Payment (${s.invoiceNumber})") },
+            title = { Text("${tr("Collect Due Payment", "বকেয়া আদায়")} (${s.invoiceNumber})") },
             text = {
                 OutlinedTextField(
                     value = amtText,
                     onValueChange = { amtText = it },
-                    label = { Text("Amount Collected (${currency.symbol})") },
+                    label = { Text("${tr("Amount Collected", "আদায়কৃত টাকা")} (${currency.symbol})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
                 )
@@ -237,9 +264,9 @@ private fun SalesTab(
                 Button(onClick = {
                     onSettleDue(s, CurrencyFormatter.toBaseBdt(amtText.toDoubleOrNull() ?: 0.0, currency))
                     settleTarget = null
-                }) { Text("Confirm") }
+                }) { Text(tr("Confirm", "নিশ্চিত করুন")) }
             },
-            dismissButton = { TextButton(onClick = { settleTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { settleTarget = null }) { Text(strings.cancel) } }
         )
     }
 }
@@ -251,6 +278,7 @@ private fun CreateSaleDialog(
     onDismiss: () -> Unit,
     onSave: (Long, Long?, String, String, String, String, InventoryItemEntity?, AnimalRecordEntity?, Double, Double, Double, Double, String) -> Unit
 ) {
+    val isBn = isBangla()
     val cats = listOf("Eggs", "Milk", "Meat", "Live Animals", "Chickens", "Ducks", "Cows", "Goats", "Birds", "Other")
     var farmId by remember { mutableStateOf(state.selectedFarmId ?: state.farms.firstOrNull()?.id ?: 0L) }
     var selectedCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
@@ -273,18 +301,18 @@ private fun CreateSaleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Sales Invoice") },
+        title = { Text(tr("Create Sales Invoice", "নতুন বিক্রয় ইনভয়েস তৈরি করুন")) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Farm", style = MaterialTheme.typography.labelLarge)
+                Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(state.farms) { f -> FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) }) }
                 }
                 if (state.customers.isNotEmpty()) {
-                    Text("Customer (optional)", style = MaterialTheme.typography.labelLarge)
+                    Text(tr("Customer (optional)", "গ্রাহক (ঐচ্ছিক)"), style = MaterialTheme.typography.labelLarge)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(state.customers) { c ->
                             FilterChip(
@@ -301,11 +329,11 @@ private fun CreateSaleDialog(
                         }
                     }
                 }
-                OutlinedTextField(value = custName, onValueChange = { custName = it }, label = { Text("Customer Name") }, singleLine = true)
-                OutlinedTextField(value = custPhone, onValueChange = { custPhone = it }, label = { Text("Customer Phone") }, singleLine = true)
+                OutlinedTextField(value = custName, onValueChange = { custName = it }, label = { Text(tr("Customer Name", "গ্রাহকের নাম")) }, singleLine = true)
+                OutlinedTextField(value = custPhone, onValueChange = { custPhone = it }, label = { Text(tr("Customer Phone", "গ্রাহকের মোবাইল")) }, singleLine = true)
 
                 if (state.inventory.isNotEmpty()) {
-                    Text("Link Inventory Item (auto-reduces stock)", style = MaterialTheme.typography.labelSmall)
+                    Text(tr("Link Inventory Item (auto-reduces stock)", "মজুদ পণ্য যুক্ত করুন (স্টক স্বয়ংক্রিয় কমবে)"), style = MaterialTheme.typography.labelSmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(state.inventory.filter { it.farmId == farmId }) { item ->
                             FilterChip(
@@ -326,7 +354,7 @@ private fun CreateSaleDialog(
                     }
                 }
                 if (state.animals.isNotEmpty()) {
-                    Text("Or Link Livestock Batch (auto-reduces count)", style = MaterialTheme.typography.labelSmall)
+                    Text(tr("Or Link Livestock Batch (auto-reduces count)", "অথবা পশুপাখির ব্যাচ যুক্ত করুন (সংখ্যা কমবে)"), style = MaterialTheme.typography.labelSmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(state.animals.filter { it.farmId == farmId && it.quantity > 0 }) { anim ->
                             FilterChip(
@@ -346,23 +374,33 @@ private fun CreateSaleDialog(
                 }
 
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(cats) { c -> FilterChip(selected = prodCat == c, onClick = { prodCat = c }, label = { Text(c) }) }
+                    items(cats) { c ->
+                        FilterChip(
+                            selected = prodCat == c,
+                            onClick = { prodCat = c },
+                            label = { Text(DomainLocalization.productCategory(c, isBn)) }
+                        )
+                    }
                 }
-                OutlinedTextField(value = prodName, onValueChange = { prodName = it }, label = { Text("Product Name *") }, singleLine = true)
+                OutlinedTextField(value = prodName, onValueChange = { prodName = it }, label = { Text(tr("Product Name *", "পণ্যের নাম *")) }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = qtyText, onValueChange = { qtyText = it }, label = { Text("Qty") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("Unit (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = qtyText, onValueChange = { qtyText = it }, label = { Text(tr("Qty", "পরিমাণ")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("${tr("Unit", "দর")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = discountText, onValueChange = { discountText = it }, label = { Text("Discount") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = paidText, onValueChange = { paidText = it }, label = { Text("Paid (default full)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = discountText, onValueChange = { discountText = it }, label = { Text(tr("Discount", "ছাড়")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = paidText, onValueChange = { paidText = it }, label = { Text(tr("Paid (default full)", "জমা (খালি থাকলে পূর্ণ)")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
                 }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(listOf("Cash", "Bank Transfer") + currency.gateways) { m ->
-                        FilterChip(selected = payMethod == m, onClick = { payMethod = m }, label = { Text(m) })
+                        FilterChip(
+                            selected = payMethod == m,
+                            onClick = { payMethod = m },
+                            label = { Text(DomainLocalization.paymentMethod(m, isBn)) }
+                        )
                     }
                 }
-                Text("Total Payable: ${currency.symbol}${totalPreview.toInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text("${tr("Total Payable", "সর্বমোট মূল্য")}: ${currency.symbol}${totalPreview.toInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
         },
         confirmButton = {
@@ -375,9 +413,9 @@ private fun CreateSaleDialog(
                         selectedInv, selectedAnim, qty, unitPrice, disc, paid, payMethod
                     )
                 }
-            ) { Text("Complete Sale") }
+            ) { Text(tr("Complete Sale", "বিক্রয় সম্পন্ন করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }
 
@@ -410,8 +448,11 @@ private fun CustomersTab(
                 item {
                     EmptyStateCard(
                         icon = Icons.Default.People,
-                        title = "No Customers",
-                        subtitle = "Track customer profiles, purchase history, payments, and due balances.",
+                        title = tr("No Customers", "কোনো গ্রাহক নেই"),
+                        subtitle = tr(
+                            "Track customer profiles, purchase history, payments, and due balances.",
+                            "গ্রাহকের প্রোফাইল, ক্রয়ের ইতিহাস, পরিশোধ ও বকেয়ার হিসাব রাখুন।"
+                        ),
                         actionLabel = strings.addCustomer,
                         onAction = { showAdd = true }
                     )
@@ -446,9 +487,9 @@ private fun CustomersTab(
                                     IconButton(onClick = { onDeleteCustomer(cust) }) { Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error) }
                                 }
                             }
-                            if (cust.address.isNotBlank()) Text("Address: ${cust.address}", style = MaterialTheme.typography.bodyMedium)
+                            if (cust.address.isNotBlank()) Text("${tr("Address", "ঠিকানা")}: ${cust.address}", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Orders: ${custSales.size} • Purchases: ${CurrencyFormatter.format(totalBuy, currency)} • Paid: ${CurrencyFormatter.format(totalPaid, currency)} • Due: ${CurrencyFormatter.format(totalDue, currency)}",
+                                "${tr("Orders", "অর্ডার")}: ${custSales.size} • ${tr("Purchases", "মোট কেনা")}: ${CurrencyFormatter.format(totalBuy, currency)} • ${tr("Paid", "জমা")}: ${CurrencyFormatter.format(totalPaid, currency)} • ${tr("Due", "বকেয়া")}: ${CurrencyFormatter.format(totalDue, currency)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (totalDue > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold
@@ -472,18 +513,18 @@ private fun CustomersTab(
 
         AlertDialog(
             onDismissRequest = { showAdd = false; editing = null },
-            title = { Text(if (editing == null) "Add Customer" else "Edit Customer") },
+            title = { Text(if (editing == null) tr("Add Customer", "গ্রাহক যোগ করুন") else tr("Edit Customer", "গ্রাহক সম্পাদনা")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (photoUri == null) "Add Photo" else "Photo Selected")
+                        Text(if (photoUri == null) tr("Add Photo", "ছবি যোগ করুন") else tr("Photo Selected", "ছবি নির্বাচিত হয়েছে"))
                     }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Customer Name *") }, singleLine = true)
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text("Mobile Number *") }, singleLine = true)
-                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true)
-                    OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") })
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Customer Name *", "গ্রাহকের নাম *")) }, singleLine = true)
+                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile Number *", "মোবাইল নম্বর *")) }, singleLine = true)
+                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text(tr("Email", "ইমেইল")) }, singleLine = true)
+                    OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("Address", "ঠিকানা")) })
                 }
             },
             confirmButton = {
@@ -512,6 +553,7 @@ private fun IncomingOrdersTab(
     currency: CurrencyOption,
     onUpdateOrderStatus: (OrderEntity, OrderStatus) -> Unit
 ) {
+    val isBn = isBangla()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -521,8 +563,11 @@ private fun IncomingOrdersTab(
             item {
                 EmptyStateCard(
                     icon = Icons.Default.LocalShipping,
-                    title = "No Online Orders",
-                    subtitle = "List inventory items for online sale to receive customer orders here."
+                    title = tr("No Online Orders", "কোনো অনলাইন অর্ডার নেই"),
+                    subtitle = tr(
+                        "List inventory items for online sale to receive customer orders here.",
+                        "গ্রাহকদের অর্ডার পেতে মজুদ পণ্য অনলাইন দোকানে যুক্ত করুন।"
+                    )
                 )
             }
         } else {
@@ -532,21 +577,21 @@ private fun IncomingOrdersTab(
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("${order.orderNumber} • ${order.farmName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            AssistChip(onClick = {}, label = { Text(currentStatus.label, fontWeight = FontWeight.Bold) })
+                            AssistChip(onClick = {}, label = { Text(DomainLocalization.orderStatus(currentStatus, isBn), fontWeight = FontWeight.Bold) })
                         }
                         if (order.cancellationRequested && currentStatus != OrderStatus.CANCELLED) {
-                            Text("Customer requested cancellation!", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+                            Text(tr("Customer requested cancellation!", "গ্রাহক অর্ডার বাতিলের অনুরোধ করেছেন!"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
                         }
-                        Text("Items: ${order.itemsSummary}", style = MaterialTheme.typography.bodyMedium)
-                        Text("Customer: ${order.customerName} (${order.customerPhone}) • ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Total: ${CurrencyFormatter.format(order.totalAmount, currency)} (${order.paymentMethod}) • ${formatShortDate(order.createdAt)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("${tr("Items", "পণ্য")}: ${order.itemsSummary}", style = MaterialTheme.typography.bodyMedium)
+                        Text("${tr("Customer", "গ্রাহক")}: ${order.customerName} (${order.customerPhone}) • ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)}) • ${formatShortDate(order.createdAt)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
 
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(OrderStatus.entries) { st ->
                                 FilterChip(
                                     selected = currentStatus == st,
                                     onClick = { onUpdateOrderStatus(order, st) },
-                                    label = { Text(st.label) }
+                                    label = { Text(DomainLocalization.orderStatus(st, isBn)) }
                                 )
                             }
                         }

@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.i18n.tr
 
 data class DualBarEntry(
     val label: String,
@@ -63,7 +64,7 @@ fun DualBarComparisonChart(
             Spacer(Modifier.height(14.dp))
             if (entries.isEmpty()) {
                 Text(
-                    "No financial data yet",
+                    tr("No financial data yet", "এখনও কোনো আর্থিক তথ্য নেই"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -142,7 +143,7 @@ fun SmoothAreaLineChart(
             Spacer(Modifier.height(12.dp))
             if (points.isEmpty()) {
                 Text(
-                    "No trend data recorded yet",
+                    tr("No trend data recorded yet", "এখনও কোনো ট্রেন্ড তথ্য সংরক্ষিত হয়নি"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -228,7 +229,7 @@ fun CategoryBreakdownDonut(
             val total = slices.sumOf { it.value }
             if (slices.isEmpty() || total <= 0.0) {
                 Text(
-                    "Add records to see breakdown",
+                    tr("Add records to see breakdown", "বিশ্লেষণ দেখতে তথ্য যোগ করুন"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

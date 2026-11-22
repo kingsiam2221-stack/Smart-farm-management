@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ai.*
 import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyOption
+import com.example.i18n.tr
 import com.example.ui.state.FarmerDashboardState
 import kotlinx.coroutines.launch
 
@@ -387,7 +388,7 @@ fun FarmAiAdvisorDialog(
                             ) {
                                 Image(
                                     bitmap = previewBmp.asImageBitmap(),
-                                    contentDescription = "Selected photo",
+                                    contentDescription = tr("Selected photo", "নির্বাচিত ছবি"),
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .size(48.dp)
@@ -399,7 +400,7 @@ fun FarmAiAdvisorDialog(
                                 )
                             }
                             IconButton(onClick = { attachedBitmap = null }) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove photo")
+                                Icon(Icons.Default.Close, contentDescription = tr("Remove photo", "ছবি সরান"))
                             }
                         }
                     }
@@ -484,7 +485,7 @@ private fun AiMessageBubble(msg: AiChatMessage) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (msg.hasImage) {
                     Text(
-                        "[Photo Attached]",
+                        tr("[Photo Attached]", "[ছবি সংযুক্ত]"),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (msg.isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
                         else MaterialTheme.colorScheme.primary,
@@ -551,7 +552,7 @@ private fun FarmAuditReportCard(
                     }
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close Audit")
+                    Icon(Icons.Default.Close, contentDescription = tr("Close Audit", "অডিট বন্ধ করুন"))
                 }
             }
 

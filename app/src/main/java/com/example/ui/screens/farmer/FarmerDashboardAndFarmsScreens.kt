@@ -36,6 +36,9 @@ import com.example.data.local.*
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.*
 import com.example.ui.state.FarmerDashboardState
 
@@ -54,8 +57,10 @@ fun FarmerDashboardScreen(
     onOpenSales: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenSubscription: () -> Unit,
-    onOpenAiAdvisor: () -> Unit = {}
+    onOpenAiAdvisor: () -> Unit = {},
+    onToggleLanguage: () -> Unit = {}
 ) {
+    val isBn = isBangla()
     val activeFarmId = state.selectedFarmId
     val filteredAnimals = remember(state.animals, activeFarmId) {
         if (activeFarmId == null) state.animals else state.animals.filter { it.farmId == activeFarmId }
@@ -98,12 +103,12 @@ fun FarmerDashboardScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(152.dp)
+                    .height(156.dp)
                     .clip(RoundedCornerShape(20.dp))
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.img_farm_hero),
-                    contentDescription = "Smart Farm Banner",
+                    contentDescription = tr("Smart Farm Banner", "স্মার্ট ফার্ম ব্যানার"),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -130,7 +135,7 @@ fun FarmerDashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 "${strings.welcomeBack}, ${user.name}",
                                 style = MaterialTheme.typography.titleLarge,
@@ -139,24 +144,43 @@ fun FarmerDashboardScreen(
                             )
                             Text(
                                 if (activeSub != null) "${activeSub.planName} • ${strings.active}"
-                                else "Subscription inactive • Tap to activate",
+                                else tr("Subscription inactive • Tap to activate", "সাবস্ক্রিপশন নিষ্ক্রিয় • সক্রিয় করতে ট্যাপ করুন"),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFB9F6CA),
                                 modifier = Modifier.clickable { onOpenSubscription() }
                             )
                         }
-                        BadgedBox(
-                            badge = {
-                                if (unreadNotificationsCount > 0) {
-                                    Badge { Text("$unreadNotificationsCount") }
-                                }
-                            }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = onOpenNotifications,
-                                colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                            Surface(
+                                onClick = onToggleLanguage,
+                                shape = RoundedCornerShape(50.dp),
+                                color = Color.White.copy(alpha = 0.22f),
+                                modifier = Modifier.testTag("dashboard_language_toggle")
                             ) {
-                                Icon(Icons.Default.Notifications, contentDescription = strings.notifications, tint = Color.White)
+                                Text(
+                                    if (isBn) "EN" else "বাংলা",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                            BadgedBox(
+                                badge = {
+                                    if (unreadNotificationsCount > 0) {
+                                        Badge { Text("$unreadNotificationsCount") }
+                                    }
+                                }
+                            ) {
+                                IconButton(
+                                    onClick = onOpenNotifications,
+                                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                                ) {
+                                    Icon(Icons.Default.Notifications, contentDescription = strings.notifications, tint = Color.White)
+                                }
                             }
                         }
                     }
@@ -190,7 +214,7 @@ fun FarmerDashboardScreen(
                     if (pendingOrdersCount > 0) {
                         AssistChip(
                             onClick = onOpenSales,
-                            label = { Text("$pendingOrdersCount New Orders") },
+                            label = { Text(tr("$pendingOrdersCount New Orders", "$pendingOrdersCount টি নতুন অর্ডার")) },
                             leadingIcon = { Icon(Icons.Default.LocalShipping, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.weight(1f)
                         )
@@ -198,7 +222,7 @@ fun FarmerDashboardScreen(
                     if (lowStockCount > 0) {
                         AssistChip(
                             onClick = onOpenFarms,
-                            label = { Text("$lowStockCount Low Stock Alerts") },
+                            label = { Text(tr("$lowStockCount Low Stock Alerts", "$lowStockCount টি কম স্টক সতর্কতা")) },
                             leadingIcon = { Icon(Icons.Default.WarningAmber, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary) },
                             modifier = Modifier.weight(1f)
                         )
@@ -211,7 +235,7 @@ fun FarmerDashboardScreen(
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
-                    QuickActionPill(Icons.Default.AutoAwesome, "AI Advisor", onOpenAiAdvisor, testTag = "open_ai_advisor_pill")
+                    QuickActionPill(Icons.Default.AutoAwesome, tr("AI Advisor", "এআই উপদেষ্টা"), onOpenAiAdvisor, testTag = "open_ai_advisor_pill")
                 }
                 item {
                     QuickActionPill(Icons.Default.AddBusiness, strings.addFarm, onOpenFarms)
@@ -257,27 +281,30 @@ fun FarmerDashboardScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     Icons.Default.AutoAwesome,
-                                    contentDescription = "AI Farm Advisor",
+                                    contentDescription = tr("AI Farm Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
                                     tint = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
                         }
                         Column {
                             Text(
-                                "Smart Farm AI Advisor",
+                                tr("Smart Farm AI Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                "Ask questions, run a live Farm Audit, or inspect livestock/feed photos",
+                                tr(
+                                    "Ask questions, run a live Farm Audit, or inspect livestock/feed photos",
+                                    "প্রশ্ন করুন, লাইভ ফার্ম অডিট চালান অথবা পশুপাখি ও খাদ্যের ছবি পরীক্ষা করুন"
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                             )
                         }
                     }
                     FilledTonalButton(onClick = onOpenAiAdvisor) {
-                        Text("Ask AI")
+                        Text(tr("Ask AI", "জিজ্ঞাসা"))
                     }
                 }
             }
@@ -292,14 +319,14 @@ fun FarmerDashboardScreen(
                         value = CurrencyFormatter.formatCompact(netProfit, currency),
                         icon = Icons.Default.TrendingUp,
                         tint = if (netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        subtitle = if (netProfit >= 0) "Profitable" else "Net Loss",
+                        subtitle = if (netProfit >= 0) tr("Profitable", "লাভজনক") else tr("Net Loss", "নিট ক্ষতি"),
                         modifier = Modifier.weight(1f)
                     )
                     KpiMetricCard(
                         title = strings.totalFarms,
                         value = "${state.farms.size}",
                         icon = Icons.Default.Agriculture,
-                        subtitle = "Multi-farm active",
+                        subtitle = tr("Multi-farm active", "একাধিক খামার সক্রিয়"),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -308,7 +335,7 @@ fun FarmerDashboardScreen(
                         title = strings.totalSales,
                         value = CurrencyFormatter.formatCompact(totalSales, currency),
                         icon = Icons.Default.ShoppingBag,
-                        subtitle = "Paid: ${CurrencyFormatter.formatCompact(totalIncome, currency)}",
+                        subtitle = "${tr("Paid", "পরিশোধিত")}: ${CurrencyFormatter.formatCompact(totalIncome, currency)}",
                         modifier = Modifier.weight(1f)
                     )
                     KpiMetricCard(
@@ -316,7 +343,7 @@ fun FarmerDashboardScreen(
                         value = CurrencyFormatter.formatCompact(totalExpenses, currency),
                         icon = Icons.Default.ReceiptLong,
                         tint = MaterialTheme.colorScheme.error,
-                        subtitle = "Due: ${CurrencyFormatter.formatCompact(totalDue, currency)}",
+                        subtitle = "${tr("Due", "বকেয়া")}: ${CurrencyFormatter.formatCompact(totalDue, currency)}",
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -361,7 +388,7 @@ fun FarmerDashboardScreen(
 
         item {
             val eggPoints = filteredEggs.take(6).reversed().mapIndexed { idx, egg ->
-                "D${idx + 1}" to egg.producedCount.toDouble()
+                "${tr("D", "দিন")}${idx + 1}" to egg.producedCount.toDouble()
             }
             SmoothAreaLineChart(
                 title = strings.eggProductionTrend,
@@ -395,6 +422,7 @@ fun FarmsScreen(
     onSaveFarm: (FarmEntity) -> Unit,
     onDeleteFarm: (FarmEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var editingFarm by remember { mutableStateOf<FarmEntity?>(null) }
@@ -448,14 +476,14 @@ fun FarmsScreen(
                         FilterChip(
                             selected = selectedCategory == null,
                             onClick = { selectedCategory = null },
-                            label = { Text("All") }
+                            label = { Text(tr("All", "সব")) }
                         )
                     }
                     items(FarmCategory.entries) { cat ->
                         FilterChip(
                             selected = selectedCategory == cat.name,
                             onClick = { selectedCategory = if (selectedCategory == cat.name) null else cat.name },
-                            label = { Text(cat.label) }
+                            label = { Text(DomainLocalization.farmCategory(cat.name, "", isBn)) }
                         )
                     }
                 }
@@ -465,8 +493,11 @@ fun FarmsScreen(
                 item {
                     EmptyStateCard(
                         icon = Icons.Default.Agriculture,
-                        title = "No Farms Found",
-                        subtitle = "Create unlimited independent farms (1, 10, 50, 100+).",
+                        title = tr("No Farms Found", "কোনো খামার পাওয়া যায়নি"),
+                        subtitle = tr(
+                            "Create unlimited independent farms (1, 10, 50, 100+).",
+                            "সীমাহীন স্বাধীন খামার তৈরি করুন (১, ১০, ৫০, ১০০+)।"
+                        ),
                         actionLabel = strings.addFarm,
                         onAction = { showCreateDialog = true }
                     )
@@ -479,6 +510,7 @@ fun FarmsScreen(
                     val farmExpenses = state.expenses.filter { it.farmId == farm.id }.sumOf { it.amount }
                     val farmNet = farmSales - farmExpenses
                     val isActive = state.selectedFarmId == farm.id
+                    val catDisplay = DomainLocalization.farmCategory(farm.category, farm.customCategoryName, isBn)
 
                     Surface(
                         shape = MaterialTheme.shapes.medium,
@@ -521,7 +553,7 @@ fun FarmsScreen(
                                         .padding(10.dp)
                                 ) {
                                     Text(
-                                        "${farm.farmCode} • ${farm.customCategoryName.ifBlank { FarmCategory.entries.find { it.name == farm.category }?.label ?: farm.category }}",
+                                        "${farm.farmCode} • $catDisplay",
                                         color = Color.White,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -536,7 +568,7 @@ fun FarmsScreen(
                                             .padding(10.dp)
                                     ) {
                                         Text(
-                                            "Active",
+                                            strings.active,
                                             color = MaterialTheme.colorScheme.onPrimary,
                                             style = MaterialTheme.typography.labelSmall,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -566,7 +598,7 @@ fun FarmsScreen(
                                 }
 
                                 Text(
-                                    "Manager: ${farm.managerName.ifBlank { "Unassigned" }} (${farm.managerPhone.ifBlank { "-" }}) • Opened ${formatShortDate(farm.openingDate)}",
+                                    "${tr("Manager", "ম্যানেজার")}: ${farm.managerName.ifBlank { tr("Unassigned", "নির্ধারিত নয়") }} (${farm.managerPhone.ifBlank { "-" }}) • ${tr("Opened", "শুরু")} ${formatShortDate(farm.openingDate)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -574,10 +606,10 @@ fun FarmsScreen(
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    FarmStatChip("Livestock", "$farmAnimals")
-                                    FarmStatChip("Investment", CurrencyFormatter.formatCompact(farm.initialInvestment, currency))
-                                    FarmStatChip("Income", CurrencyFormatter.formatCompact(farmIncome, currency))
-                                    FarmStatChip("Expenses", CurrencyFormatter.formatCompact(farmExpenses, currency))
+                                    FarmStatChip(tr("Livestock", "পশুপাখি"), "$farmAnimals")
+                                    FarmStatChip(tr("Investment", "বিনিয়োগ"), CurrencyFormatter.formatCompact(farm.initialInvestment, currency))
+                                    FarmStatChip(tr("Income", "আয়"), CurrencyFormatter.formatCompact(farmIncome, currency))
+                                    FarmStatChip(tr("Expenses", "খরচ"), CurrencyFormatter.formatCompact(farmExpenses, currency))
                                 }
 
                                 Row(
@@ -586,13 +618,13 @@ fun FarmsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        "Net P/L: ${CurrencyFormatter.format(farmNet, currency)}",
+                                        "${tr("Net P/L", "নিট লাভ/ক্ষতি")}: ${CurrencyFormatter.format(farmNet, currency)}",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = if (farmNet >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                                     )
                                     FilledTonalButton(onClick = { onSelectFarm(if (isActive) null else farm.id) }) {
-                                        Text(if (isActive) "Show All Farms" else "Focus This Farm")
+                                        Text(if (isActive) tr("Show All Farms", "সকল খামার দেখুন") else tr("Focus This Farm", "এই খামার দেখুন"))
                                     }
                                 }
                             }
@@ -632,6 +664,7 @@ private fun FarmEditorDialog(
     onDismiss: () -> Unit,
     onSave: (FarmEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var farmCode by remember { mutableStateOf(initial?.farmCode ?: "FM-${(1000..9999).random()}") }
     var location by remember { mutableStateOf(initial?.location ?: "") }
@@ -655,7 +688,12 @@ private fun FarmEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Create New Farm" else "Edit Farm") },
+        title = {
+            Text(
+                if (initial == null) tr("Create New Farm", "নতুন খামার তৈরি করুন")
+                else tr("Edit Farm", "খামার সম্পাদনা করুন")
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -670,32 +708,35 @@ private fun FarmEditorDialog(
                 ) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (imageUri == null) "Choose Farm Image" else "Change Selected Image")
+                    Text(
+                        if (imageUri == null) tr("Choose Farm Image", "খামারের ছবি নির্বাচন করুন")
+                        else tr("Change Selected Image", "নির্বাচিত ছবি পরিবর্তন করুন")
+                    )
                 }
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Farm Name *") }, singleLine = true)
-                OutlinedTextField(value = farmCode, onValueChange = { farmCode = it }, label = { Text("Farm ID") }, singleLine = true)
-                OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("Location (City/District)") }, singleLine = true)
-                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Full Address") })
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Farm Name *", "খামারের নাম *")) }, singleLine = true)
+                OutlinedTextField(value = farmCode, onValueChange = { farmCode = it }, label = { Text(tr("Farm ID", "খামার আইডি")) }, singleLine = true)
+                OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text(tr("Location (City/District)", "অবস্থান (শহর/জেলা)")) }, singleLine = true)
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("Full Address", "সম্পূর্ণ ঠিকানা")) })
 
-                Text("Farm Category", style = MaterialTheme.typography.labelLarge)
+                Text(tr("Farm Category", "খামারের ধরন"), style = MaterialTheme.typography.labelLarge)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(FarmCategory.entries) { cat ->
                         FilterChip(
                             selected = category == cat.name,
                             onClick = { category = cat.name },
-                            label = { Text(cat.label) }
+                            label = { Text(DomainLocalization.farmCategory(cat.name, "", isBn)) }
                         )
                     }
                 }
                 if (category == FarmCategory.CUSTOM.name) {
-                    OutlinedTextField(value = customCat, onValueChange = { customCat = it }, label = { Text("Custom Category Name") }, singleLine = true)
+                    OutlinedTextField(value = customCat, onValueChange = { customCat = it }, label = { Text(tr("Custom Category Name", "কাস্টম ধরনের নাম")) }, singleLine = true)
                 }
-                OutlinedTextField(value = managerName, onValueChange = { managerName = it }, label = { Text("Manager Name") }, singleLine = true)
-                OutlinedTextField(value = managerPhone, onValueChange = { managerPhone = it }, label = { Text("Manager Phone") }, singleLine = true)
+                OutlinedTextField(value = managerName, onValueChange = { managerName = it }, label = { Text(tr("Manager Name", "ম্যানেজারের নাম")) }, singleLine = true)
+                OutlinedTextField(value = managerPhone, onValueChange = { managerPhone = it }, label = { Text(tr("Manager Phone", "ম্যানেজারের মোবাইল")) }, singleLine = true)
                 OutlinedTextField(
                     value = investmentText,
                     onValueChange = { investmentText = it },
-                    label = { Text("Initial Investment (${currency.symbol})") },
+                    label = { Text("${tr("Initial Investment", "প্রাথমিক বিনিয়োগ")} (${currency.symbol})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
                 )
@@ -721,8 +762,8 @@ private fun FarmEditorDialog(
                         )
                     )
                 }
-            ) { Text("Save Farm") }
+            ) { Text(tr("Save Farm", "খামার সংরক্ষণ করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }

@@ -27,6 +27,9 @@ import com.example.data.local.*
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.*
 import com.example.ui.state.FarmerDashboardState
 
@@ -41,6 +44,7 @@ fun LivestockScreen(
     onDeleteAnimal: (AnimalRecordEntity) -> Unit,
     onRecordEvent: (AnimalRecordEntity, AnimalEventType, Int, Double, String) -> Unit
 ) {
+    val isBn = isBangla()
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var showAddAnimal by remember { mutableStateOf(false) }
@@ -87,7 +91,7 @@ fun LivestockScreen(
                     TextButton(onClick = { showCustomCategoryDialog = true }) {
                         Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Custom Type")
+                        Text(tr("Custom Type", "কাস্টম ধরন"))
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -96,7 +100,7 @@ fun LivestockScreen(
                 OutlinedTextField(
                     value = search,
                     onValueChange = { search = it },
-                    placeholder = { Text("Search name, tag #, breed...") },
+                    placeholder = { Text(tr("Search name, tag #, breed...", "নাম, ট্যাগ #, জাত খুঁজুন...")) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -104,13 +108,17 @@ fun LivestockScreen(
                 Spacer(Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
-                        FilterChip(selected = selectedCategory == null, onClick = { selectedCategory = null }, label = { Text("All (${farmFiltered.sumOf { it.quantity }})") })
+                        FilterChip(
+                            selected = selectedCategory == null,
+                            onClick = { selectedCategory = null },
+                            label = { Text("${tr("All", "সব")} (${farmFiltered.sumOf { it.quantity }})") }
+                        )
                     }
                     items(state.categories, key = { it.id }) { cat ->
                         FilterChip(
                             selected = selectedCategory == cat.name,
                             onClick = { selectedCategory = if (selectedCategory == cat.name) null else cat.name },
-                            label = { Text(cat.name) }
+                            label = { Text(DomainLocalization.animalCategory(cat.name, isBn)) }
                         )
                     }
                 }
@@ -123,7 +131,11 @@ fun LivestockScreen(
                     Color(0xFFD98A00), Color(0xFF558B2F), Color(0xFF8D6E63)
                 )
                 val slices = farmFiltered.groupBy { it.category }.entries.mapIndexed { i, (cat, list) ->
-                    ChartSlice(cat, list.sumOf { it.quantity }.toDouble(), palette[i % palette.size])
+                    ChartSlice(
+                        DomainLocalization.animalCategory(cat, isBn),
+                        list.sumOf { it.quantity }.toDouble(),
+                        palette[i % palette.size]
+                    )
                 }
                 CategoryBreakdownDonut(title = strings.animalGrowth, slices = slices)
             }
@@ -132,16 +144,22 @@ fun LivestockScreen(
                 item {
                     EmptyStateCard(
                         icon = Icons.Default.Pets,
-                        title = "No Animals or Birds",
-                        subtitle = "Add cattle, goats, poultry, ducks, quail, or custom types.",
+                        title = tr("No Animals or Birds", "কোনো পশু বা পাখি নেই"),
+                        subtitle = tr(
+                            "Add cattle, goats, poultry, ducks, quail, or custom types.",
+                            "গরু, ছাগল, মুরগি, হাঁস, কোয়েল বা কাস্টম ধরন যোগ করুন।"
+                        ),
                         actionLabel = strings.addAnimal,
                         onAction = { showAddAnimal = true }
                     )
                 }
             } else {
                 items(displayed, key = { it.id }) { animal ->
-                    val farmName = farmsMap[animal.farmId]?.name ?: "Farm"
+                    val farmName = farmsMap[animal.farmId]?.name ?: tr("Farm", "খামার")
                     val animalEvents = state.animalEvents.filter { it.animalRecordId == animal.id }
+                    val catDisp = DomainLocalization.animalCategory(animal.category, isBn)
+                    val genderDisp = DomainLocalization.gender(animal.gender, isBn)
+                    val healthDisp = DomainLocalization.healthStatus(animal.healthStatus, isBn)
                     Surface(
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surface,
@@ -178,28 +196,28 @@ fun LivestockScreen(
                                     }
                                     Column {
                                         Text(animal.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                        Text("${animal.category} • ${animal.tagNumber} • $farmName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("$catDisp • ${animal.tagNumber} • $farmName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                AssistChip(onClick = {}, label = { Text("Qty: ${animal.quantity}", fontWeight = FontWeight.Bold) })
+                                AssistChip(onClick = {}, label = { Text("${tr("Qty", "সংখ্যা")}: ${animal.quantity}", fontWeight = FontWeight.Bold) })
                             }
 
                             Text(
-                                "Breed: ${animal.breed.ifBlank { "-" }} • Gender: ${animal.gender} • Age: ${animal.dobOrAge.ifBlank { "-" }} • Health: ${animal.healthStatus}",
+                                "${tr("Breed", "জাত")}: ${animal.breed.ifBlank { "-" }} • ${tr("Gender", "লিঙ্গ")}: $genderDisp • ${tr("Age", "বয়স")}: ${animal.dobOrAge.ifBlank { "-" }} • ${tr("Health", "স্বাস্থ্য")}: $healthDisp",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                "Purchase: ${CurrencyFormatter.format(animal.purchasePrice, currency)} (${formatShortDate(animal.purchaseDate)})",
+                                "${tr("Purchase", "ক্রয়মূল্য")}: ${CurrencyFormatter.format(animal.purchasePrice, currency)} (${formatShortDate(animal.purchaseDate)})",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (animal.notes.isNotBlank()) {
-                                Text("Notes: ${animal.notes}", style = MaterialTheme.typography.labelSmall)
+                                Text("${tr("Notes", "নোট")}: ${animal.notes}", style = MaterialTheme.typography.labelSmall)
                             }
                             if (animalEvents.isNotEmpty()) {
                                 val latest = animalEvents.first()
                                 Text(
-                                    "Latest Event: ${latest.eventType} (${latest.description}) • ${formatShortDate(latest.eventDate)}",
+                                    "${tr("Latest Event", "সর্বশেষ ঘটনা")}: ${DomainLocalization.animalEventKey(latest.eventType, isBn)} (${latest.description}) • ${formatShortDate(latest.eventDate)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -214,7 +232,7 @@ fun LivestockScreen(
                                 ) {
                                     Icon(Icons.Default.MedicalServices, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Log Event / Health")
+                                    Text(tr("Log Event / Health", "ঘটনা / স্বাস্থ্য লিখুন"))
                                 }
                                 IconButton(onClick = { editingAnimal = animal }) {
                                     Icon(Icons.Default.Edit, contentDescription = strings.edit)
@@ -235,13 +253,13 @@ fun LivestockScreen(
         var isBird by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showCustomCategoryDialog = false },
-            title = { Text("Add Custom Animal / Bird Type") },
+            title = { Text(tr("Add Custom Animal / Bird Type", "কাস্টম পশু বা পাখির ধরন যোগ করুন")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = catName, onValueChange = { catName = it }, label = { Text("Category Name (e.g., Emu, Rabbit)") }, singleLine = true)
+                    OutlinedTextField(value = catName, onValueChange = { catName = it }, label = { Text(tr("Category Name (e.g., Emu, Rabbit)", "ধরনের নাম (যেমন: খরগোশ, টার্কি)")) }, singleLine = true)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = isBird, onCheckedChange = { isBird = it })
-                        Text("Count as Bird / Poultry")
+                        Text(tr("Count as Bird / Poultry", "পাখি / পোল্ট্রি হিসেবে গণনা করুন"))
                     }
                 }
             },
@@ -300,6 +318,7 @@ private fun AnimalEditorDialog(
     onDismiss: () -> Unit,
     onSave: (AnimalRecordEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var selectedFarmId by remember { mutableStateOf(initial?.farmId ?: defaultFarmId ?: 0L) }
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var category by remember { mutableStateOf(initial?.category ?: categories.firstOrNull()?.name ?: "Cow") }
@@ -325,7 +344,7 @@ private fun AnimalEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Add Animal / Bird" else "Edit Record") },
+        title = { Text(if (initial == null) tr("Add Animal / Bird", "পশু / পাখি যোগ করুন") else tr("Edit Record", "তথ্য সম্পাদনা")) },
         text = {
             Column(
                 modifier = Modifier
@@ -335,18 +354,22 @@ private fun AnimalEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (farms.isEmpty()) {
-                    Text("Please create a Farm first.", color = MaterialTheme.colorScheme.error)
+                    Text(tr("Please create a Farm first.", "অনুগ্রহ করে আগে একটি খামার তৈরি করুন।"), color = MaterialTheme.colorScheme.error)
                 } else {
-                    Text("Select Farm", style = MaterialTheme.typography.labelLarge)
+                    Text(tr("Select Farm", "খামার নির্বাচন করুন"), style = MaterialTheme.typography.labelLarge)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(farms) { f ->
                             FilterChip(selected = selectedFarmId == f.id, onClick = { selectedFarmId = f.id }, label = { Text(f.name) })
                         }
                     }
-                    Text("Category", style = MaterialTheme.typography.labelLarge)
+                    Text(tr("Category", "ধরন"), style = MaterialTheme.typography.labelLarge)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(categories) { c ->
-                            FilterChip(selected = category == c.name, onClick = { category = c.name }, label = { Text(c.name) })
+                            FilterChip(
+                                selected = category == c.name,
+                                onClick = { category = c.name },
+                                label = { Text(DomainLocalization.animalCategory(c.name, isBn)) }
+                            )
                         }
                     }
                     OutlinedButton(
@@ -355,29 +378,29 @@ private fun AnimalEditorDialog(
                     ) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (photoUri == null) "Add Photo" else "Photo Selected")
+                        Text(if (photoUri == null) tr("Add Photo", "ছবি যোগ করুন") else tr("Photo Selected", "ছবি নির্বাচিত হয়েছে"))
                     }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Animal / Batch Name *") }, singleLine = true)
-                    OutlinedTextField(value = tag, onValueChange = { tag = it }, label = { Text("Tag / ID Number") }, singleLine = true)
-                    OutlinedTextField(value = breed, onValueChange = { breed = it }, label = { Text("Breed") }, singleLine = true)
-                    OutlinedTextField(value = gender, onValueChange = { gender = it }, label = { Text("Gender (Male/Female/Mixed)") }, singleLine = true)
-                    OutlinedTextField(value = age, onValueChange = { age = it }, label = { Text("DOB or Age") }, singleLine = true)
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Animal / Batch Name *", "পশু বা ব্যাচের নাম *")) }, singleLine = true)
+                    OutlinedTextField(value = tag, onValueChange = { tag = it }, label = { Text(tr("Tag / ID Number", "ট্যাগ / আইডি নম্বর")) }, singleLine = true)
+                    OutlinedTextField(value = breed, onValueChange = { breed = it }, label = { Text(tr("Breed", "জাত")) }, singleLine = true)
+                    OutlinedTextField(value = gender, onValueChange = { gender = it }, label = { Text(tr("Gender (Male/Female/Mixed)", "লিঙ্গ (পুরুষ/স্ত্রী/মিশ্র)")) }, singleLine = true)
+                    OutlinedTextField(value = age, onValueChange = { age = it }, label = { Text(tr("DOB or Age", "জন্ম তারিখ বা বয়স")) }, singleLine = true)
                     OutlinedTextField(
                         value = qtyText,
                         onValueChange = { qtyText = it },
-                        label = { Text("Current Quantity") },
+                        label = { Text(tr("Current Quantity", "বর্তমান সংখ্যা")) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = priceText,
                         onValueChange = { priceText = it },
-                        label = { Text("Purchase Price (${currency.symbol})") },
+                        label = { Text("${tr("Purchase Price", "ক্রয়মূল্য")} (${currency.symbol})") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
-                    OutlinedTextField(value = health, onValueChange = { health = it }, label = { Text("Health Status") }, singleLine = true)
-                    OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") })
+                    OutlinedTextField(value = health, onValueChange = { health = it }, label = { Text(tr("Health Status", "স্বাস্থ্য অবস্থা")) }, singleLine = true)
+                    OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text(tr("Notes", "নোট")) })
                 }
             }
         },
@@ -405,9 +428,9 @@ private fun AnimalEditorDialog(
                         )
                     )
                 }
-            ) { Text("Save") }
+            ) { Text(tr("Save", "সংরক্ষণ")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }
 
@@ -418,6 +441,7 @@ private fun AnimalEventDialog(
     onDismiss: () -> Unit,
     onSave: (AnimalEventType, Int, Double, String) -> Unit
 ) {
+    val isBn = isBangla()
     var eventType by remember { mutableStateOf(AnimalEventType.VACCINATION) }
     var deltaText by remember { mutableStateOf("1") }
     var costText by remember { mutableStateOf("0") }
@@ -425,19 +449,23 @@ private fun AnimalEventDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Log Event: ${animal.name}") },
+        title = { Text("${tr("Log Event", "ঘটনা লিখুন")}: ${animal.name}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(AnimalEventType.entries) { t ->
-                        FilterChip(selected = eventType == t, onClick = { eventType = t }, label = { Text(t.label) })
+                        FilterChip(
+                            selected = eventType == t,
+                            onClick = { eventType = t },
+                            label = { Text(DomainLocalization.animalEventType(t, isBn)) }
+                        )
                     }
                 }
                 if (eventType in listOf(AnimalEventType.BIRTH, AnimalEventType.PURCHASE, AnimalEventType.DEATH, AnimalEventType.SALE, AnimalEventType.TRANSFER)) {
                     OutlinedTextField(
                         value = deltaText,
                         onValueChange = { deltaText = it },
-                        label = { Text("Quantity Change") },
+                        label = { Text(tr("Quantity Change", "সংখ্যার পরিবর্তন")) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
                     )
@@ -445,19 +473,19 @@ private fun AnimalEventDialog(
                 OutlinedTextField(
                     value = costText,
                     onValueChange = { costText = it },
-                    label = { Text("Cost / Value (${currency.symbol})") },
+                    label = { Text("${tr("Cost / Value", "খরচ / মূল্য")} (${currency.symbol})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true
                 )
-                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Details / Medicine / Notes") })
+                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Details / Medicine / Notes", "বিবরণ / ওষুধ / নোট")) })
             }
         },
         confirmButton = {
             Button(onClick = {
                 onSave(eventType, deltaText.toIntOrNull() ?: 0, costText.toDoubleOrNull() ?: 0.0, desc.ifBlank { eventType.label })
-            }) { Text("Save Event") }
+            }) { Text(tr("Save Event", "সংরক্ষণ করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }
 
@@ -470,6 +498,7 @@ fun EggsScreen(
     onRecordEggs: (Long, String, Int?, Int, Int, Int, Double) -> Unit,
     onDeleteEgg: (EggProductionEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var periodFilter by remember { mutableStateOf("All") } // Daily, Weekly, Monthly, Yearly, All
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -522,38 +551,61 @@ fun EggsScreen(
                 Spacer(Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(listOf("All", "Daily", "Weekly", "Monthly", "Yearly")) { p ->
-                        FilterChip(selected = periodFilter == p, onClick = { periodFilter = p }, label = { Text(p) })
+                        FilterChip(
+                            selected = periodFilter == p,
+                            onClick = { periodFilter = p },
+                            label = { Text(DomainLocalization.period(p, isBn)) }
+                        )
                     }
                 }
             }
 
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricCard(strings.eggsProduced, "$totalProduced", Icons.Default.Egg, subtitle = "Broken: $totalBroken • Sold: $totalSold", modifier = Modifier.weight(1f))
-                    KpiMetricCard(strings.eggsAvailable, "$totalAvailable", Icons.Default.Inventory2, subtitle = "Val: ${CurrencyFormatter.formatCompact(totalValue, currency)}", modifier = Modifier.weight(1f))
+                    KpiMetricCard(
+                        strings.eggsProduced,
+                        "$totalProduced",
+                        Icons.Default.Egg,
+                        subtitle = "${tr("Broken", "ভাঙা")}: $totalBroken • ${tr("Sold", "বিক্রি")}: $totalSold",
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiMetricCard(
+                        strings.eggsAvailable,
+                        "$totalAvailable",
+                        Icons.Default.Inventory2,
+                        subtitle = "${tr("Val", "মূল্য")}: ${CurrencyFormatter.formatCompact(totalValue, currency)}",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             item {
                 val points = filtered.take(7).reversed().mapIndexed { idx, rec ->
-                    "R${idx + 1}" to rec.producedCount.toDouble()
+                    "${tr("R", "ধাপ")}${idx + 1}" to rec.producedCount.toDouble()
                 }
-                SmoothAreaLineChart(title = "${strings.eggProductionTrend} ($periodFilter)", points = points)
+                SmoothAreaLineChart(
+                    title = "${strings.eggProductionTrend} (${DomainLocalization.period(periodFilter, isBn)})",
+                    points = points
+                )
             }
 
             if (filtered.isEmpty()) {
                 item {
                     EmptyStateCard(
                         icon = Icons.Default.Egg,
-                        title = "No Egg Records",
-                        subtitle = "Track daily Chicken, Duck, Quail, Pigeon, or Custom bird eggs.",
+                        title = tr("No Egg Records", "কোনো ডিমের হিসাব নেই"),
+                        subtitle = tr(
+                            "Track daily Chicken, Duck, Quail, Pigeon, or Custom bird eggs.",
+                            "দৈনিক মুরগি, হাঁস, কোয়েল, কবুতর বা কাস্টম ডিমের হিসাব রাখুন।"
+                        ),
                         actionLabel = strings.recordEggs,
                         onAction = { showAddDialog = true }
                     )
                 }
             } else {
                 items(filtered, key = { it.id }) { egg ->
-                    val farmName = farmsMap[egg.farmId]?.name ?: "Farm"
+                    val farmName = farmsMap[egg.farmId]?.name ?: tr("Farm", "খামার")
+                    val catDisp = DomainLocalization.eggCategory(egg.eggCategory, isBn)
                     Surface(
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surface,
@@ -566,13 +618,13 @@ fun EggsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("${egg.eggCategory} • $farmName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("$catDisp • $farmName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Text(
-                                    "Prev: ${egg.previousStock} + New: ${egg.producedCount} - Sold: ${egg.soldCount} - Broken: ${egg.brokenCount} = Avail: ${egg.availableCount}",
+                                    "${tr("Prev", "পূর্বের")}: ${egg.previousStock} + ${tr("New", "নতুন")}: ${egg.producedCount} - ${tr("Sold", "বিক্রি")}: ${egg.soldCount} - ${tr("Broken", "ভাঙা")}: ${egg.brokenCount} = ${tr("Avail", "মজুদ")}: ${egg.availableCount}",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Text(
-                                    "${formatShortDate(egg.productionDate)} • Value: ${CurrencyFormatter.format(egg.totalValue, currency)}",
+                                    "${formatShortDate(egg.productionDate)} • ${tr("Value", "মূল্য")}: ${CurrencyFormatter.format(egg.totalValue, currency)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -611,6 +663,7 @@ private fun RecordEggDialog(
     onDismiss: () -> Unit,
     onSave: (Long, String, Int?, Int, Int, Int, Double) -> Unit
 ) {
+    val isBn = isBangla()
     val defaultCats = listOf("Chicken Eggs", "Duck Eggs", "Quail Eggs", "Pigeon Eggs", "Other Bird Eggs", "Custom")
     var selectedFarmId by remember { mutableStateOf(defaultFarmId ?: 0L) }
     var selectedCat by remember { mutableStateOf("Chicken Eggs") }
@@ -632,7 +685,7 @@ private fun RecordEggDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Record Daily Egg Production") },
+        title = { Text(tr("Record Daily Egg Production", "দৈনিক ডিম উৎপাদন হিসাব লিখুন")) },
         text = {
             Column(
                 modifier = Modifier
@@ -642,7 +695,7 @@ private fun RecordEggDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (farms.isEmpty()) {
-                    Text("Create a farm first.", color = MaterialTheme.colorScheme.error)
+                    Text(tr("Create a farm first.", "আগে একটি খামার তৈরি করুন।"), color = MaterialTheme.colorScheme.error)
                 } else {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(farms) { f ->
@@ -651,20 +704,24 @@ private fun RecordEggDialog(
                     }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(defaultCats) { c ->
-                            FilterChip(selected = selectedCat == c, onClick = { selectedCat = c }, label = { Text(c) })
+                            FilterChip(
+                                selected = selectedCat == c,
+                                onClick = { selectedCat = c },
+                                label = { Text(DomainLocalization.eggCategory(c, isBn)) }
+                            )
                         }
                     }
                     if (selectedCat == "Custom") {
-                        OutlinedTextField(value = customCat, onValueChange = { customCat = it }, label = { Text("Custom Egg Category") }, singleLine = true)
+                        OutlinedTextField(value = customCat, onValueChange = { customCat = it }, label = { Text(tr("Custom Egg Category", "কাস্টম ডিমের ধরন")) }, singleLine = true)
                     }
-                    Text("Previous Stock: $latestPrev eggs", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                    OutlinedTextField(value = producedText, onValueChange = { producedText = it }, label = { Text("Produced Today *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = brokenText, onValueChange = { brokenText = it }, label = { Text("Broken Eggs") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = soldText, onValueChange = { soldText = it }, label = { Text("Sold Eggs") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("Selling Price / Egg (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    Text("${tr("Previous Stock", "পূর্বের মজুদ")}: $latestPrev ${tr("eggs", "টি ডিম")}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    OutlinedTextField(value = producedText, onValueChange = { producedText = it }, label = { Text(tr("Produced Today *", "আজকের উৎপাদন *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(value = brokenText, onValueChange = { brokenText = it }, label = { Text(tr("Broken Eggs", "ভাঙা ডিম")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(value = soldText, onValueChange = { soldText = it }, label = { Text(tr("Sold Eggs", "বিক্রিত ডিম")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("${tr("Selling Price / Egg", "প্রতি ডিমের বিক্রয়মূল্য")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.small) {
                         Text(
-                            "Auto Available: $availPreview eggs",
+                            "${tr("Auto Available", "স্বয়ংক্রিয় মজুদ")}: $availPreview ${tr("eggs", "টি ডিম")}",
                             modifier = Modifier.padding(10.dp),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -679,8 +736,8 @@ private fun RecordEggDialog(
                 onClick = {
                     onSave(selectedFarmId, resolvedCat, latestPrev, prod, broken, sold, priceText.toDoubleOrNull() ?: 0.0)
                 }
-            ) { Text("Save Eggs") }
+            ) { Text(tr("Save Eggs", "ডিম সংরক্ষণ করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }

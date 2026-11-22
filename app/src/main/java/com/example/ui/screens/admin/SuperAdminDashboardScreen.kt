@@ -19,6 +19,9 @@ import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.i18n.DomainLocalization
+import com.example.i18n.isBangla
+import com.example.i18n.tr
 import com.example.ui.components.*
 import com.example.ui.state.SuperAdminState
 
@@ -50,8 +53,8 @@ fun SuperAdminDashboardScreen(
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.GppBad, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(56.dp))
-                Text("403 • Unauthorized Access", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Button(onClick = onLogout) { Text("Return to Sign In") }
+                Text(tr("403 • Unauthorized Access", "৪০৩ • অননুমোদিত প্রবেশ"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Button(onClick = onLogout) { Text(tr("Return to Sign In", "লগইন পাতায় ফিরুন")) }
             }
         }
         return
@@ -78,12 +81,20 @@ fun SuperAdminDashboardScreen(
                     title = {
                         Column {
                             Text(strings.superAdminPortal, fontWeight = FontWeight.Bold)
-                            Text("Private Developer Console • ${adminUser.email}", style = MaterialTheme.typography.labelSmall)
+                            Text("${tr("Private Developer Console", "প্রাইভেট ডেভেলপার কনসোল")} • ${adminUser.email}", style = MaterialTheme.typography.labelSmall)
                         }
                     },
                     actions = {
+                        TextButton(onClick = {
+                            onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
+                        }) {
+                            Text(
+                                if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         IconButton(onClick = { showSettingsModal = true }) {
-                            Icon(Icons.Default.Language, contentDescription = "Language & Currency")
+                            Icon(Icons.Default.Language, contentDescription = tr("Language & Currency", "ভাষা ও মুদ্রা"))
                         }
                         IconButton(onClick = onLogout) {
                             Icon(Icons.Default.Logout, contentDescription = strings.logout, tint = MaterialTheme.colorScheme.error)
@@ -168,29 +179,53 @@ private fun AdminOverviewTab(state: SuperAdminState, currency: CurrencyOption) {
     ) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiMetricCard("Total Users", "${state.users.size}", Icons.Default.People, subtitle = "$activeUsers Active • $inactiveUsers Inactive", modifier = Modifier.weight(1f))
-                KpiMetricCard("Total Farms", "${state.farms.size}", Icons.Default.Agriculture, subtitle = "${state.orders.size} Platform Orders", modifier = Modifier.weight(1f))
+                KpiMetricCard(
+                    tr("Total Users", "মোট ব্যবহারকারী"),
+                    "${state.users.size}",
+                    Icons.Default.People,
+                    subtitle = "$activeUsers ${tr("Active", "সক্রিয়")} • $inactiveUsers ${tr("Inactive", "নিষ্ক্রিয়")}",
+                    modifier = Modifier.weight(1f)
+                )
+                KpiMetricCard(
+                    tr("Total Farms", "মোট খামার"),
+                    "${state.farms.size}",
+                    Icons.Default.Agriculture,
+                    subtitle = "${state.orders.size} ${tr("Platform Orders", "প্ল্যাটফর্ম অর্ডার")}",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiMetricCard("Subscriptions", "${state.subscriptions.size}", Icons.Default.CardMembership, subtitle = "$activeSubs Active • $expiredSubs Expired", modifier = Modifier.weight(1f))
-                KpiMetricCard("Lifetime Revenue", CurrencyFormatter.format(lifetimeSubRev, currency), Icons.Default.Paid, subtitle = "Month: ${CurrencyFormatter.format(monthlySubRev, currency)}", modifier = Modifier.weight(1f))
+                KpiMetricCard(
+                    tr("Subscriptions", "সাবস্ক্রিপশন"),
+                    "${state.subscriptions.size}",
+                    Icons.Default.CardMembership,
+                    subtitle = "$activeSubs ${tr("Active", "সক্রিয়")} • $expiredSubs ${tr("Expired", "মেয়াদোত্তীর্ণ")}",
+                    modifier = Modifier.weight(1f)
+                )
+                KpiMetricCard(
+                    tr("Lifetime Revenue", "সর্বমোট আয়"),
+                    CurrencyFormatter.format(lifetimeSubRev, currency),
+                    Icons.Default.Paid,
+                    subtitle = "${tr("Month", "মাস")}: ${CurrencyFormatter.format(monthlySubRev, currency)}",
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KpiMetricCard("Monthly Sub Rev", CurrencyFormatter.format(monthlySubRev, currency), Icons.Default.CalendarMonth, modifier = Modifier.weight(1f))
-                KpiMetricCard("Yearly Sub Rev", CurrencyFormatter.format(yearlySubRev, currency), Icons.Default.EventRepeat, modifier = Modifier.weight(1f))
+                KpiMetricCard(tr("Monthly Sub Rev", "মাসিক সাবস্ক্রিপশন আয়"), CurrencyFormatter.format(monthlySubRev, currency), Icons.Default.CalendarMonth, modifier = Modifier.weight(1f))
+                KpiMetricCard(tr("Yearly Sub Rev", "বাৎসরিক সাবস্ক্রিপশন আয়"), CurrencyFormatter.format(yearlySubRev, currency), Icons.Default.EventRepeat, modifier = Modifier.weight(1f))
             }
         }
         item {
             val chartPoints = listOf(
-                "30d Rev" to CurrencyFormatter.convertFromBase(monthlySubRev, currency),
-                "1y Rev" to CurrencyFormatter.convertFromBase(yearlySubRev, currency),
-                "Total Rev" to CurrencyFormatter.convertFromBase(lifetimeSubRev, currency)
+                tr("30d Rev", "৩০ দিনের আয়") to CurrencyFormatter.convertFromBase(monthlySubRev, currency),
+                tr("1y Rev", "১ বছরের আয়") to CurrencyFormatter.convertFromBase(yearlySubRev, currency),
+                tr("Total Rev", "মোট আয়") to CurrencyFormatter.convertFromBase(lifetimeSubRev, currency)
             )
-            SmoothAreaLineChart(title = "Subscription Revenue Growth (${currency.symbol})", points = chartPoints)
+            SmoothAreaLineChart(title = "${tr("Subscription Revenue Growth", "সাবস্ক্রিপশন আয় বৃদ্ধি")} (${currency.symbol})", points = chartPoints)
         }
     }
 }
@@ -202,6 +237,7 @@ private fun AdminUsersTab(
     onSetUserStatus: (UserEntity, AccountStatus) -> Unit,
     onGrantPlan: (UserEntity, SubscriptionPlanEntity) -> Unit
 ) {
+    val isBn = isBangla()
     var search by remember { mutableStateOf("") }
     var grantTarget by remember { mutableStateOf<UserEntity?>(null) }
     val filtered = remember(state.users, search) {
@@ -219,7 +255,7 @@ private fun AdminUsersTab(
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                placeholder = { Text("Search users by name, email, mobile...") },
+                placeholder = { Text(tr("Search users by name, email, mobile...", "নাম, ইমেইল বা মোবাইল দিয়ে খুঁজুন...")) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -232,28 +268,28 @@ private fun AdminUsersTab(
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("${u.name} (${u.role})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("${u.name} (${DomainLocalization.userRole(u.role, isBn)})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("${u.email} • ${u.mobile}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        AssistChip(onClick = {}, label = { Text(u.status) })
+                        AssistChip(onClick = {}, label = { Text(DomainLocalization.accountStatus(u.status, isBn)) })
                     }
                     Text(
-                        "Farms: $userFarms • Subscription: ${userSub?.planName ?: "None"} • Joined ${formatShortDate(u.createdAt)}",
+                        "${tr("Farms", "খামার")}: $userFarms • ${tr("Subscription", "সাবস্ক্রিপশন")}: ${userSub?.planName ?: tr("None", "নেই")} • ${tr("Joined", "যোগদান")} ${formatShortDate(u.createdAt)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     if (u.role != UserRole.SUPER_ADMIN.name) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             item {
-                                FilledTonalButton(onClick = { onSetUserStatus(u, AccountStatus.ACTIVE) }) { Text("Activate") }
+                                FilledTonalButton(onClick = { onSetUserStatus(u, AccountStatus.ACTIVE) }) { Text(tr("Activate", "সক্রিয় করুন")) }
                             }
                             item {
-                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.INACTIVE) }) { Text("Deactivate") }
+                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.INACTIVE) }) { Text(tr("Deactivate", "নিষ্ক্রিয়")) }
                             }
                             item {
-                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.SUSPENDED) }) { Text("Suspend") }
+                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.SUSPENDED) }) { Text(tr("Suspend", "স্থগিত")) }
                             }
                             item {
-                                Button(onClick = { grantTarget = u }) { Text("Assign Plan") }
+                                Button(onClick = { grantTarget = u }) { Text(tr("Assign Plan", "প্ল্যান দিন")) }
                             }
                         }
                     }
@@ -266,18 +302,18 @@ private fun AdminUsersTab(
         val target = grantTarget!!
         AlertDialog(
             onDismissRequest = { grantTarget = null },
-            title = { Text("Assign Subscription to ${target.name}") },
+            title = { Text("${tr("Assign Subscription to", "সাবস্ক্রিপশন দিন:")} ${target.name}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     plans.forEach { p ->
                         FilledTonalButton(onClick = { onGrantPlan(target, p); grantTarget = null }, modifier = Modifier.fillMaxWidth()) {
-                            Text("${p.name} (${p.durationDays} days)")
+                            Text("${p.name} (${p.durationDays} ${tr("days", "দিন")})")
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { grantTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { grantTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
         )
     }
 }
@@ -291,6 +327,7 @@ private fun AdminPlansTab(
     onDeletePlan: (SubscriptionPlanEntity) -> Unit,
     onUpdatePayment: (UserSubscriptionEntity, PaymentStatus, String) -> Unit
 ) {
+    val isBn = isBangla()
     var editingPlan by remember { mutableStateOf<SubscriptionPlanEntity?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     val pendingSubs = subs.filter { it.paymentStatus == PaymentStatus.PENDING.name || it.status == "PENDING" }
@@ -299,8 +336,8 @@ private fun AdminPlansTab(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showCreate = true },
-                icon = { Icon(Icons.Default.Add, contentDescription = "Add Plan") },
-                text = { Text("Create Plan") }
+                icon = { Icon(Icons.Default.Add, contentDescription = tr("Add Plan", "প্ল্যান যোগ করুন")) },
+                text = { Text(tr("Create Plan", "নতুন প্ল্যান")) }
             )
         }
     ) { padding ->
@@ -310,19 +347,20 @@ private fun AdminPlansTab(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text("Subscription Plans (Live Editable)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(tr("Subscription Plans (Live Editable)", "সাবস্ক্রিপশন প্ল্যানসমূহ"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             items(plans, key = { it.id }) { plan ->
+                val stateLabel = if (plan.active) tr("Active", "সক্রিয়") else tr("Hidden", "লুকানো")
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("${plan.name} (${if (plan.active) "Active" else "Hidden"})", fontWeight = FontWeight.Bold)
-                            Text("${CurrencyFormatter.format(plan.priceBaseBdt, currency)} • ${plan.durationDays} days", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text("${plan.name} ($stateLabel)", fontWeight = FontWeight.Bold)
+                            Text("${CurrencyFormatter.format(plan.priceBaseBdt, currency)} • ${plan.durationDays} ${tr("days", "দিন")}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                             Text(plan.description, style = MaterialTheme.typography.labelSmall)
                         }
                         Row {
-                            IconButton(onClick = { editingPlan = plan }) { Icon(Icons.Default.Edit, contentDescription = "Edit Plan") }
-                            IconButton(onClick = { onDeletePlan(plan) }) { Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Plan", tint = MaterialTheme.colorScheme.error) }
+                            IconButton(onClick = { editingPlan = plan }) { Icon(Icons.Default.Edit, contentDescription = tr("Edit Plan", "প্ল্যান সম্পাদনা")) }
+                            IconButton(onClick = { onDeletePlan(plan) }) { Icon(Icons.Default.DeleteOutline, contentDescription = tr("Delete Plan", "প্ল্যান মুছুন"), tint = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }
@@ -330,16 +368,16 @@ private fun AdminPlansTab(
             if (pendingSubs.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(6.dp))
-                    Text("Manual Payment Verification Queue (${pendingSubs.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${tr("Manual Payment Verification Queue", "ম্যানুয়াল পেমেন্ট যাচাইকরণ তালিকা")} (${pendingSubs.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
                 items(pendingSubs, key = { it.id }) { sub ->
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("${sub.userName} • ${sub.planName} (${CurrencyFormatter.format(sub.pricePaidBdt, currency)})", fontWeight = FontWeight.Bold)
-                            Text("${sub.paymentMethod} • Ref: ${sub.transactionRef}", style = MaterialTheme.typography.labelSmall)
+                            Text("${DomainLocalization.paymentMethod(sub.paymentMethod, isBn)} • ${tr("Ref", "রেফ")}: ${sub.transactionRef}", style = MaterialTheme.typography.labelSmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { onUpdatePayment(sub, PaymentStatus.SUCCESSFUL, "ACTIVE") }) { Text("Approve") }
-                                OutlinedButton(onClick = { onUpdatePayment(sub, PaymentStatus.FAILED, "EXPIRED") }) { Text("Reject") }
+                                Button(onClick = { onUpdatePayment(sub, PaymentStatus.SUCCESSFUL, "ACTIVE") }) { Text(tr("Approve", "অনুমোদন")) }
+                                OutlinedButton(onClick = { onUpdatePayment(sub, PaymentStatus.FAILED, "EXPIRED") }) { Text(tr("Reject", "বাতিল")) }
                             }
                         }
                     }
@@ -359,17 +397,17 @@ private fun AdminPlansTab(
 
         AlertDialog(
             onDismissRequest = { showCreate = false; editingPlan = null },
-            title = { Text(if (init == null) "Create Subscription Plan" else "Edit Subscription Plan") },
+            title = { Text(if (init == null) tr("Create Subscription Plan", "নতুন সাবস্ক্রিপশন প্ল্যান") else tr("Edit Subscription Plan", "সাবস্ক্রিপশন প্ল্যান সম্পাদনা")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Plan Name *") }, singleLine = true)
-                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("Base Price (BDT ৳) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = daysText, onValueChange = { daysText = it }, label = { Text("Duration (days) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") })
-                    OutlinedTextField(value = features, onValueChange = { features = it }, label = { Text("Features") })
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Plan Name *", "প্ল্যানের নাম *")) }, singleLine = true)
+                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text(tr("Base Price (BDT ৳) *", "মূল মূল্য (টাকা ৳) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(value = daysText, onValueChange = { daysText = it }, label = { Text(tr("Duration (days) *", "মেয়াদ (দিন) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Description", "বিবরণ")) })
+                    OutlinedTextField(value = features, onValueChange = { features = it }, label = { Text(tr("Features", "সুবিধাসমূহ")) })
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = active, onCheckedChange = { active = it })
-                        Text("Active & Visible to Farmers")
+                        Text(tr("Active & Visible to Farmers", "সক্রিয় ও খামারিদের জন্য দৃশ্যমান"))
                     }
                 }
             },
@@ -387,9 +425,9 @@ private fun AdminPlansTab(
                     )
                     showCreate = false
                     editingPlan = null
-                }) { Text("Save Plan") }
+                }) { Text(tr("Save Plan", "সংরক্ষণ করুন")) }
             },
-            dismissButton = { TextButton(onClick = { showCreate = false; editingPlan = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showCreate = false; editingPlan = null }) { Text(tr("Cancel", "বাতিল")) } }
         )
     }
 }
@@ -400,6 +438,7 @@ private fun AdminFinanceTab(
     currency: CurrencyOption,
     onUpdatePayment: (UserSubscriptionEntity, PaymentStatus, String) -> Unit
 ) {
+    val isBn = isBangla()
     var statusFilter by remember { mutableStateOf<String?>(null) }
     val filtered = remember(state.subscriptions, statusFilter) {
         if (statusFilter == null) state.subscriptions else state.subscriptions.filter { it.paymentStatus == statusFilter }
@@ -412,25 +451,31 @@ private fun AdminFinanceTab(
     ) {
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { FilterChip(selected = statusFilter == null, onClick = { statusFilter = null }, label = { Text("All (${state.subscriptions.size})") }) }
+                item { FilterChip(selected = statusFilter == null, onClick = { statusFilter = null }, label = { Text("${tr("All", "সব")} (${state.subscriptions.size})") }) }
                 items(PaymentStatus.entries) { st ->
-                    FilterChip(selected = statusFilter == st.name, onClick = { statusFilter = st.name }, label = { Text(st.label) })
+                    FilterChip(
+                        selected = statusFilter == st.name,
+                        onClick = { statusFilter = st.name },
+                        label = { Text(DomainLocalization.paymentStatus(st, isBn)) }
+                    )
                 }
             }
         }
         items(filtered, key = { it.id }) { sub ->
+            val pStatusEnum = PaymentStatus.entries.find { it.name == sub.paymentStatus }
+            val pStatusText = if (pStatusEnum != null) DomainLocalization.paymentStatus(pStatusEnum, isBn) else sub.paymentStatus
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("${sub.userName} • ${sub.planName}", fontWeight = FontWeight.Bold)
-                        Text("${sub.paymentMethod} • Ref: ${sub.transactionRef} • ${sub.paymentStatus}", style = MaterialTheme.typography.labelSmall)
-                        Text("Start: ${formatShortDate(sub.startDate)} • Exp: ${formatShortDate(sub.expiryDate)}", style = MaterialTheme.typography.labelSmall)
+                        Text("${DomainLocalization.paymentMethod(sub.paymentMethod, isBn)} • ${tr("Ref", "রেফ")}: ${sub.transactionRef} • $pStatusText", style = MaterialTheme.typography.labelSmall)
+                        Text("${tr("Start", "শুরু")}: ${formatShortDate(sub.startDate)} • ${tr("Exp", "মেয়াদ")}: ${formatShortDate(sub.expiryDate)}", style = MaterialTheme.typography.labelSmall)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(CurrencyFormatter.format(sub.pricePaidBdt, currency), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         if (sub.paymentStatus == PaymentStatus.SUCCESSFUL.name) {
                             TextButton(onClick = { onUpdatePayment(sub, PaymentStatus.REFUNDED, "EXPIRED") }) {
-                                Text("Refund", color = MaterialTheme.colorScheme.error)
+                                Text(tr("Refund", "রিফান্ড"), color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -462,14 +507,16 @@ private fun AdminSystemTab(
         item {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("System Settings & App Banner", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = banner, onValueChange = { banner = it }, label = { Text("Dashboard Announcement Banner") }, modifier = Modifier.fillMaxWidth())
+                    Text(tr("System Settings & App Banner", "সিস্টেম সেটিংস ও ঘোষণা ব্যানার"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = banner, onValueChange = { banner = it }, label = { Text(tr("Dashboard Announcement Banner", "ড্যাশবোর্ড ঘোষণা ব্যানার")) }, modifier = Modifier.fillMaxWidth())
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(checked = maint, onCheckedChange = { maint = it })
                         Spacer(Modifier.width(8.dp))
-                        Text("Maintenance Mode")
+                        Text(tr("Maintenance Mode", "রক্ষণাবেক্ষণ মোড"))
                     }
-                    Button(onClick = { onSaveSettings(settings.copy(announcementBanner = banner, maintenanceMode = maint)) }) { Text("Save Settings") }
+                    Button(onClick = { onSaveSettings(settings.copy(announcementBanner = banner, maintenanceMode = maint)) }) {
+                        Text(tr("Save Settings", "সেটিংস সংরক্ষণ"))
+                    }
                 }
             }
         }
@@ -477,60 +524,62 @@ private fun AdminSystemTab(
         item {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Broadcast Notification", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = bTitle, onValueChange = { bTitle = it }, label = { Text("Announcement Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = bMsg, onValueChange = { bMsg = it }, label = { Text("Message to All Users") }, modifier = Modifier.fillMaxWidth())
+                    Text(tr("Broadcast Notification", "সবার কাছে নোটিফিকেশন পাঠান"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(value = bTitle, onValueChange = { bTitle = it }, label = { Text(tr("Announcement Title", "ঘোষণার শিরোনাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = bMsg, onValueChange = { bMsg = it }, label = { Text(tr("Message to All Users", "সকল ব্যবহারকারীর জন্য বার্তা")) }, modifier = Modifier.fillMaxWidth())
                     Button(enabled = bTitle.isNotBlank() && bMsg.isNotBlank(), onClick = {
                         onBroadcast(bTitle, bMsg)
                         bTitle = ""; bMsg = ""
-                    }) { Text("Send Broadcast") }
+                    }) { Text(tr("Send Broadcast", "বার্তা পাঠান")) }
                 }
             }
         }
 
         item {
-            Text("Support Requests (${state.supportRequests.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("${tr("Support Requests", "সাপোর্ট অনুরোধ")} (${state.supportRequests.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
         items(state.supportRequests, key = { it.id }) { req ->
+            val stLabel = if (req.status == "OPEN") tr("OPEN", "খোলা") else tr("RESOLVED", "সমাধান হয়েছে")
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${req.subject} • ${req.userName} (${req.status})", fontWeight = FontWeight.Bold)
+                    Text("${req.subject} • ${req.userName} ($stLabel)", fontWeight = FontWeight.Bold)
                     Text(req.message, style = MaterialTheme.typography.bodyMedium)
                     if (req.status == "OPEN") {
-                        FilledTonalButton(onClick = { replyTarget = req }) { Text("Reply & Resolve") }
+                        FilledTonalButton(onClick = { replyTarget = req }) { Text(tr("Reply & Resolve", "উত্তর ও সমাধান করুন")) }
                     } else {
-                        Text("Reply: ${req.adminReply}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                        Text("${tr("Reply", "উত্তর")}: ${req.adminReply}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
         }
 
         item {
-            Text("Admin Activity Audit Logs (${state.auditLogs.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("${tr("Admin Activity Audit Logs", "অ্যাডমিন কার্যকলাপ লগ")} (${state.auditLogs.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
         items(state.auditLogs, key = { it.id }) { log ->
             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Text("${log.action} • ${log.target}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Text("${log.details} — by ${log.actorName} (${formatShortDate(log.createdAt)})", style = MaterialTheme.typography.labelSmall)
+                    Text("${log.details} — ${tr("by", "দ্বারা")} ${log.actorName} (${formatShortDate(log.createdAt)})", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
     }
 
     if (replyTarget != null) {
-        var reply by remember { mutableStateOf("Resolved by Super Admin team.") }
+        val defaultReply = tr("Resolved by Super Admin team.", "সুপার অ্যাডমিন টিম দ্বারা সমাধান করা হয়েছে।")
+        var reply by remember { mutableStateOf(defaultReply) }
         AlertDialog(
             onDismissRequest = { replyTarget = null },
-            title = { Text("Resolve Ticket: ${replyTarget!!.subject}") },
-            text = { OutlinedTextField(value = reply, onValueChange = { reply = it }, label = { Text("Admin Reply") }) },
+            title = { Text("${tr("Resolve Ticket", "টিকিট সমাধান")}: ${replyTarget!!.subject}") },
+            text = { OutlinedTextField(value = reply, onValueChange = { reply = it }, label = { Text(tr("Admin Reply", "অ্যাডমিন উত্তর")) }) },
             confirmButton = {
                 Button(onClick = {
                     onResolveSupport(replyTarget!!, reply)
                     replyTarget = null
-                }) { Text("Send & Resolve") }
+                }) { Text(tr("Send & Resolve", "পাঠান ও সমাধান")) }
             },
-            dismissButton = { TextButton(onClick = { replyTarget = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { replyTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
         )
     }
 }
