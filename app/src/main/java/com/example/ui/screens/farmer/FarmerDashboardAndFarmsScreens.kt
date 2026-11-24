@@ -57,6 +57,8 @@ fun FarmerDashboardScreen(
     onOpenLivestock: () -> Unit,
     onOpenEggs: () -> Unit,
     onOpenSales: () -> Unit,
+    onOpenOrders: () -> Unit = onOpenSales,
+    onOpenOnlineProducts: () -> Unit = {},
     onOpenInventory: () -> Unit = onOpenFarms,
     onOpenPermissions: () -> Unit = {},
     onOpenGuide: () -> Unit = {},
@@ -269,7 +271,7 @@ fun FarmerDashboardScreen(
                 ) {
                     if (showPendingChip) {
                         AssistChip(
-                            onClick = onOpenSales,
+                            onClick = onOpenOrders,
                             label = { Text(tr("$pendingOrdersCount New Orders", "$pendingOrdersCount টি নতুন অর্ডার")) },
                             leadingIcon = { Icon(Icons.Default.LocalShipping, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.weight(1f)
@@ -289,6 +291,7 @@ fun FarmerDashboardScreen(
 
         // Quick Actions Row (only permitted actions)
         val showAnyQuickAction = policy.canManagePermissions() ||
+            policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE) ||
             policy.has(AppPermission.AI_ADVISOR) ||
             policy.has(AppPermission.FARM_GUIDE_VIEW) ||
             policy.has(AppPermission.FARMS_CREATE_EDIT) ||
@@ -298,6 +301,16 @@ fun FarmerDashboardScreen(
         if (showAnyQuickAction) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE)) {
+                        item {
+                            QuickActionPill(
+                                Icons.Default.AddShoppingCart,
+                                tr("Online Product Add", "অনলাইন পণ্য যোগ"),
+                                onOpenOnlineProducts,
+                                testTag = "dashboard_online_products_pill"
+                            )
+                        }
+                    }
                     if (policy.canManagePermissions()) {
                         item {
                             QuickActionPill(Icons.Default.AdminPanelSettings, strings.permissions, onOpenPermissions, testTag = "dashboard_permissions_pill")
@@ -331,6 +344,72 @@ fun FarmerDashboardScreen(
                     if (policy.has(AppPermission.SALES_CREATE_COLLECT)) {
                         item {
                             QuickActionPill(Icons.Default.PointOfSale, strings.newSale, onOpenSales)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Farm Business Dedicated Option Card: Online Product Add & Marketplace Selling
+        if (policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE)) {
+            item {
+                val onlineUnlocked = subPolicy.canAccess(SubscriptionFeature.ONLINE_PRODUCT_STORE)
+                val liveOnlineCount = state.inventory.count { it.listInMarketplace && it.quantity > 0.0 }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_online_products_card")
+                        .clickable { if (onlineUnlocked) onOpenOnlineProducts() else if (canSubscribe) onOpenSubscription() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Storefront,
+                                        contentDescription = strings.onlineProducts,
+                                        tint = MaterialTheme.colorScheme.onTertiary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                FeaturePlanBadge(
+                                    isFree = subPolicy.isFree(SubscriptionFeature.ONLINE_PRODUCT_STORE),
+                                    hasActiveSub = subPolicy.hasActiveSubscription
+                                )
+                                Text(
+                                    tr("Online Product Add (Agri Marketplace)", "অনলাইন পণ্য যোগ ও কৃষি মার্কেটপ্লেস"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    tr(
+                                        "$liveOnlineCount live • Sell Rice, Wheat, Mustard, Crops, Dairy or resold goods & receive farm orders",
+                                        "$liveOnlineCount টি লাইভ • চাল, গম, সরিষা বা যেকোনো কৃষি পণ্য অনলাইনে বিক্রি করুন ও অর্ডার পান"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        FilledTonalButton(onClick = { if (onlineUnlocked) onOpenOnlineProducts() else if (canSubscribe) onOpenSubscription() }) {
+                            Text(if (onlineUnlocked) tr("Add / Sell", "যোগ করুন") else tr("Unlock", "আনলক"))
                         }
                     }
                 }

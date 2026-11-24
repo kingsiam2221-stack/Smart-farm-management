@@ -136,6 +136,17 @@ object DomainLocalization {
     fun productCategory(cat: String, isBn: Boolean): String {
         if (!isBn) return cat
         return when (cat) {
+            "Rice" -> "চাল / ধান"
+            "Wheat" -> "গম"
+            "Mustard" -> "সরিষা ও তেল"
+            "Vegetables" -> "শাকসবজি"
+            "Fruits" -> "ফলমূল"
+            "Pulses & Lentils" -> "ডাল ও শস্য"
+            "Spices" -> "মসলা"
+            "Seeds" -> "বীজ"
+            "Fertilizer" -> "সার"
+            "Honey" -> "মধু"
+            "Fish" -> "মাছ"
             "Eggs" -> "ডিম"
             "Milk" -> "দুধ"
             "Meat" -> "মাংস"
@@ -152,6 +163,14 @@ object DomainLocalization {
             "Farm Equipment" -> "খামার সরঞ্জাম"
             "Other" -> "অন্যান্য"
             else -> animalCategory(cat, true)
+        }
+    }
+
+    fun sourcingType(key: String, isBn: Boolean): String {
+        return if (key == com.example.data.local.ProductSourcingType.PURCHASED_RESALE.key) {
+            if (isBn) "ক্রয় ও পুনর্বিক্রয় (কৃষি ব্যবসা)" else "Bought & Resold (Agri Trader)"
+        } else {
+            if (isBn) "নিজস্ব খামার / ফসল উৎপাদন" else "Own Farm Harvest"
         }
     }
 
@@ -319,7 +338,8 @@ data class AppStrings(
     val placeOrder: String,
     val orderHistory: String,
     val superAdminPortal: String,
-    val permissions: String
+    val permissions: String,
+    val onlineProducts: String
 )
 
 object Localization {
@@ -397,7 +417,8 @@ object Localization {
         placeOrder = "Place Order",
         orderHistory = "Order History",
         superAdminPortal = "Super Admin Console",
-        permissions = "Permissions"
+        permissions = "Permissions",
+        onlineProducts = "Online Products"
     )
 
     val bangla = AppStrings(
@@ -474,7 +495,8 @@ object Localization {
         placeOrder = "অর্ডার নিশ্চিত করুন",
         orderHistory = "অর্ডার ইতিহাস",
         superAdminPortal = "সুপার অ্যাডমিন কনসোল",
-        permissions = "অনুমতি (অ্যাক্সেস)"
+        permissions = "অনুমতি (অ্যাক্সেস)",
+        onlineProducts = "অনলাইন পণ্য"
     )
 
     fun strings(language: AppLanguage, overrides: Map<String, String> = emptyMap()): AppStrings {

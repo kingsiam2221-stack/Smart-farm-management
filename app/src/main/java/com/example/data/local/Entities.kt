@@ -177,12 +177,63 @@ data class EggProductionEntity(
     val totalValue: Double = 0.0
 )
 
+enum class ProductSourcingType(val key: String) {
+    FARM_PRODUCED("FARM_PRODUCED"),
+    PURCHASED_RESALE("PURCHASED_RESALE")
+}
+
+object AgriProductCatalog {
+    val onlineCategories: List<String> = listOf(
+        "Rice",
+        "Wheat",
+        "Mustard",
+        "Vegetables",
+        "Fruits",
+        "Pulses & Lentils",
+        "Spices",
+        "Seeds",
+        "Fertilizer",
+        "Honey",
+        "Fish",
+        "Eggs",
+        "Milk",
+        "Meat",
+        "Live Animals",
+        "Chickens",
+        "Ducks",
+        "Cows",
+        "Goats",
+        "Birds",
+        "Animal Feed",
+        "Poultry Feed",
+        "Farm Equipment",
+        "Other"
+    )
+
+    val units: List<String> = listOf(
+        "kg",
+        "mon",
+        "ton",
+        "liter",
+        "pcs",
+        "dozen",
+        "tray",
+        "bag",
+        "pack"
+    )
+}
+
 @Entity(
     tableName = "inventory_items",
     foreignKeys = [
         ForeignKey(entity = FarmEntity::class, parentColumns = ["id"], childColumns = ["farmId"], onDelete = ForeignKey.CASCADE)
     ],
-    indices = [Index("farmId"), Index("ownerUserId")]
+    indices = [
+        Index("farmId"),
+        Index("ownerUserId"),
+        Index(value = ["listInMarketplace", "quantity", "updatedAt"]),
+        Index(value = ["category"])
+    ]
 )
 data class InventoryItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -201,6 +252,7 @@ data class InventoryItemEntity(
     val listInMarketplace: Boolean = false,
     val description: String = "",
     val imageUri: String? = null,
+    val sourcingType: String = ProductSourcingType.FARM_PRODUCED.key,
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -271,7 +323,12 @@ data class SaleEntity(
 
 @Entity(
     tableName = "orders",
-    indices = [Index("customerUserId"), Index("farmId"), Index("farmOwnerUserId")]
+    indices = [
+        Index("customerUserId"),
+        Index("farmId"),
+        Index("farmOwnerUserId"),
+        Index(value = ["farmOwnerUserId", "status", "createdAt"])
+    ]
 )
 data class OrderEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -385,7 +442,10 @@ data class UserSubscriptionEntity(
 
 @Entity(
     tableName = "notifications",
-    indices = [Index("targetUserId")]
+    indices = [
+        Index("targetUserId"),
+        Index(value = ["targetUserId", "readFlag", "createdAt"])
+    ]
 )
 data class AppNotificationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

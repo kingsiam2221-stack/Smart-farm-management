@@ -9,6 +9,7 @@ enum class PermissionGroup(val titleEn: String, val titleBn: String) {
     EXPENSES("Farm Expenses", "খামারের খরচ"),
     EMPLOYEES("Employees & Payroll", "কর্মচারী ও বেতন"),
     SALES_CRM("Sales, Customers & Orders", "বিক্রয়, গ্রাহক ও অর্ডার"),
+    ONLINE_STORE("Online Product Storefront", "অনলাইন পণ্য ও বিক্রি"),
     GUIDE("Farming Guide", "পালন গাইড"),
     REPORTS_SYSTEM("Reports, Subscription & Caution", "রিপোর্ট, সাবস্ক্রিপশন ও সতর্কতা"),
     CUSTOM("Custom Added Options", "নতুন যোগকৃত অপশন")
@@ -238,6 +239,22 @@ enum class AppPermission(
         descEn = "Confirm, process, ship or cancel orders",
         descBn = "অর্ডার নিশ্চিত, প্রস্তুত বা বাতিল করা"
     ),
+    ONLINE_PRODUCTS_VIEW(
+        key = "ONLINE_PRODUCTS_VIEW",
+        group = PermissionGroup.ONLINE_STORE,
+        titleEn = "View Online Store Products",
+        titleBn = "অনলাইন পণ্য তালিকা দেখা",
+        descEn = "View farm & agricultural products listed online",
+        descBn = "অনলাইন দোকানে যুক্ত কৃষি ও খামার পণ্য দেখা"
+    ),
+    ONLINE_PRODUCTS_MANAGE(
+        key = "ONLINE_PRODUCTS_MANAGE",
+        group = PermissionGroup.ONLINE_STORE,
+        titleEn = "Add, Edit & Publish Online Products",
+        titleBn = "অনলাইন পণ্য যোগ, সম্পাদনা ও প্রকাশ",
+        descEn = "Add rice, wheat, mustard or any agri product for sale",
+        descBn = "চাল, গম, সরিষা বা যেকোনো কৃষি পণ্য অনলাইনে বিক্রি করা"
+    ),
     FARM_GUIDE_VIEW(
         key = "FARM_GUIDE_VIEW",
         group = PermissionGroup.GUIDE,
@@ -324,6 +341,8 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.CUSTOMERS_MANAGE.key,
             AppPermission.ORDERS_VIEW.key,
             AppPermission.ORDERS_MANAGE.key,
+            AppPermission.ONLINE_PRODUCTS_VIEW.key,
+            AppPermission.ONLINE_PRODUCTS_MANAGE.key,
             AppPermission.FARM_GUIDE_VIEW.key,
             AppPermission.REPORTS_VIEW_EXPORT.key,
             AppPermission.ALERTS_CAUTION_VIEW.key
@@ -355,7 +374,9 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.CUSTOMERS_VIEW.key,
             AppPermission.CUSTOMERS_MANAGE.key,
             AppPermission.ORDERS_VIEW.key,
-            AppPermission.ORDERS_MANAGE.key
+            AppPermission.ORDERS_MANAGE.key,
+            AppPermission.ONLINE_PRODUCTS_VIEW.key,
+            AppPermission.ONLINE_PRODUCTS_MANAGE.key
         )
     ),
     VIEW_ONLY(

@@ -60,6 +60,9 @@ fun CustomerPortalScreen(
     onRequestCancelOrder: (OrderEntity) -> Unit,
     onMarkNotificationsRead: () -> Unit,
     onUpdateProfile: (String, String, String?) -> Unit,
+    onSearchChange: (String) -> Unit = {},
+    onSelectCategory: (String?) -> Unit = {},
+    onLoadMore: () -> Unit = {},
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectCurrency: (CurrencyOption) -> Unit,
     onSelectDarkMode: (Boolean?) -> Unit,
@@ -125,6 +128,9 @@ fun CustomerPortalScreen(
                             currentLanguage = currentLanguage,
                             currency = currentCurrency,
                             darkModeOverride = darkModeOverride,
+                            onSearchChange = onSearchChange,
+                            onSelectCategory = onSelectCategory,
+                            onLoadMore = onLoadMore,
                             onToggleLanguage = {
                                 onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
                             },
@@ -153,28 +159,24 @@ private fun ShopCatalogTab(
     currentLanguage: AppLanguage,
     currency: CurrencyOption,
     darkModeOverride: Boolean?,
+    onSearchChange: (String) -> Unit,
+    onSelectCategory: (String?) -> Unit,
+    onLoadMore: () -> Unit,
     onToggleLanguage: () -> Unit,
     onSelectDarkMode: (Boolean?) -> Unit,
     onAddToCart: (InventoryItemEntity) -> Unit
 ) {
     val isBn = isBangla()
-    var search by remember { mutableStateOf("") }
-    var selectedCat by remember { mutableStateOf<String?>(null) }
-    val categories = remember(state.marketplaceItems) { state.marketplaceItems.map { it.category }.distinct() }
-    val filtered = remember(state.marketplaceItems, search, selectedCat) {
-        state.marketplaceItems.filter { item ->
-            val q = search.isBlank() || item.name.contains(search, true) || item.description.contains(search, true)
-            val c = selectedCat == null || item.category == selectedCat
-            q && c
-        }
-    }
+    val categories = state.availableCategories
+    val filtered = state.marketplaceItems
+    val hasMore = state.totalMatchingCount > filtered.size
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
+        item(key = "shop_header") {
             Box(modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(18.dp))) {
                 Image(
                     painter = painterResource(id = R.drawable.img_marketplace_fresh),
@@ -221,15 +223,15 @@ private fun ShopCatalogTab(
                 }
                 Column(modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                     Text(
-                        tr("Farm-to-Table Marketplace", "খামার থেকে সরাসরি বাজার"),
+                        tr("Farm-to-Table Agri Marketplace", "খামার থেকে সরাসরি কৃষি বাজার"),
                         style = MaterialTheme.typography.titleLarge,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         tr(
-                            "Direct fresh eggs, dairy, meat & produce from local farms",
-                            "স্থানীয় খামার থেকে তাজা ডিম, দুধ, মাংস ও খামার পণ্য"
+                            "Rice, wheat, mustard, fresh eggs, dairy & farm goods direct from farm businesses",
+                            "সরাসরি খামার ও কৃষি ব্যবসা থেকে চাল, গম, সরিষা, তাজা ডিম, দুধ ও ফসল কিনুন"
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.9f)
@@ -238,69 +240,176 @@ private fun ShopCatalogTab(
             }
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                placeholder = { Text(strings.search) },
+                value = state.searchQuery,
+                onValueChange = onSearchChange,
+                placeholder = { Text(tr("Search rice, wheat, mustard, eggs...", "চাল, গম, সরিষা, ডিম খুঁজুন...")) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (state.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = tr("Clear", "মুছুন"))
+                        }
+                    }
+                },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("marketplace_search_input")
             )
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { FilterChip(selected = selectedCat == null, onClick = { selectedCat = null }, label = { Text(tr("All", "সব")) }) }
-                items(categories) { cat ->
+                item(key = "cat_all") {
                     FilterChip(
-                        selected = selectedCat == cat,
-                        onClick = { selectedCat = if (selectedCat == cat) null else cat },
+                        selected = state.selectedCategory == null,
+                        onClick = { onSelectCategory(null) },
+                        label = { Text(tr("All", "সব")) }
+                    )
+                }
+                items(categories, key = { "cat_$it" }) { cat ->
+                    FilterChip(
+                        selected = state.selectedCategory == cat,
+                        onClick = { onSelectCategory(if (state.selectedCategory == cat) null else cat) },
                         label = { Text(DomainLocalization.productCategory(cat, isBn)) }
                     )
                 }
             }
+            if (state.totalMatchingCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    tr(
+                        "Showing ${filtered.size} of ${state.totalMatchingCount} products",
+                        "${state.totalMatchingCount}টির মধ্যে ${filtered.size}টি পণ্য দেখানো হচ্ছে"
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         if (filtered.isEmpty()) {
-            item {
+            item(key = "shop_empty") {
                 EmptyStateCard(
                     icon = Icons.Default.Storefront,
                     title = tr("No Products Listed", "কোনো পণ্য তালিকাভুক্ত নেই"),
                     subtitle = tr(
-                        "Farmers can list Eggs, Milk, Meat, and Produce from Inventory.",
-                        "খামারিরা ইনভেন্টরি থেকে ডিম, দুধ, মাংস ও অন্যান্য পণ্য তালিকায় যোগ করতে পারেন।"
+                        "Farm business accounts can list Rice, Wheat, Mustard, Eggs, Milk, Meat & any agri produce.",
+                        "খামার ও কৃষি ব্যবসা অ্যাকাউন্ট থেকে চাল, গম, সরিষা, ডিম, দুধ বা যেকোনো পণ্য বিক্রি করা যায়।"
                     )
                 )
             }
         } else {
-            items(filtered, key = { it.id }) { item ->
-                val farmName = state.farmsById[item.farmId]?.name ?: tr("Local Farm", "স্থানীয় খামার")
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            items(filtered, key = { "mkt_${it.id}" }) { item ->
+                val farm = state.farmsById[item.farmId]
+                val farmName = farm?.name ?: tr("Local Farm", "স্থানীয় খামার")
+                val farmLoc = farm?.location?.takeIf { it.isNotBlank() }
+                val sellerLine = if (farmLoc != null) "$farmName ($farmLoc)" else farmName
+                val isResale = item.sourcingType == ProductSourcingType.PURCHASED_RESALE.key
+
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth().testTag("marketplace_item_${item.id}")
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            if (!item.imageUri.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = item.imageUri,
+                                    contentDescription = item.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp))
+                                )
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(52.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            if (isResale) Icons.Default.LocalMall else Icons.Default.Eco,
+                                            contentDescription = item.category,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        item.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        CurrencyFormatter.format(item.sellingPrice, currency),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Text(
-                                    "$farmName • ${DomainLocalization.productCategory(item.category, isBn)}",
+                                    "$sellerLine • ${DomainLocalization.productCategory(item.category, isBn)}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    DomainLocalization.sourcingType(item.sourcingType, isBn),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
                                 )
                             }
-                            Text(
-                                CurrencyFormatter.format(item.sellingPrice, currency),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
                         if (item.description.isNotBlank()) {
                             Text(item.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("${tr("Available", "মজুদ")}: ${item.quantity.toInt()} ${item.unit}", style = MaterialTheme.typography.labelSmall)
-                            Button(onClick = { onAddToCart(item) }) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${tr("Available", "মজুদ")}: ${item.quantity.toInt()} ${item.unit} • /${item.unit}",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Button(
+                                onClick = { onAddToCart(item) },
+                                modifier = Modifier.testTag("add_to_cart_${item.id}")
+                            ) {
                                 Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(tr("Add to Cart", "কার্টে যোগ করুন"))
                             }
                         }
+                    }
+                }
+            }
+
+            if (hasMore) {
+                item(key = "shop_load_more") {
+                    OutlinedButton(
+                        onClick = onLoadMore,
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("marketplace_load_more")
+                    ) {
+                        Icon(Icons.Default.ExpandMore, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            tr(
+                                "Load More (${state.totalMatchingCount - filtered.size} remaining)",
+                                "আরও পণ্য দেখুন (বাকি ${state.totalMatchingCount - filtered.size}টি)"
+                            ),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

@@ -457,11 +457,11 @@ fun AuthScreen(
                                             onClick = { switchMode(AuthScreenMode.CREATE_CUSTOMER) }
                                         )
 
-                                        // Option 2: Make Farmer Account
+                                        // Option 2: Make Farmer / Farm Business Account
                                         OptionActionCard(
                                             icon = Icons.Default.Agriculture,
-                                            title = if (isBangla) "খামারি অ্যাকাউন্ট" else "Make Farmer Account",
-                                            subtitle = if (isBangla) "নতুন খামার তৈরি" else "Farm Owner Sign Up",
+                                            title = if (isBangla) "খামার ও ব্যবসা অ্যাকাউন্ট" else "Make Farm Business",
+                                            subtitle = if (isBangla) "খামারি ও কৃষি পণ্য বিক্রেতা" else "Farm Owner & Online Seller",
                                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
                                             modifier = Modifier
                                                 .weight(1f)
@@ -485,8 +485,8 @@ fun AuthScreen(
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
-                                            if (isBangla) "খামারি লগইন (বিদ্যমান খামার)"
-                                            else "Farmer Login (Existing Farm Owners)",
+                                            if (isBangla) "খামার ও ব্যবসা লগইন (অনলাইন বিক্রেতা)"
+                                            else "Farm Business Login (Farm Owners & Sellers)",
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
@@ -548,14 +548,14 @@ fun AuthScreen(
 
                         AuthScreenMode.CREATE_FARMER -> {
                             RegistrationCard(
-                                title = if (isBangla) "খামারি অ্যাকাউন্ট তৈরি করুন" else "Make Farmer Account",
+                                title = if (isBangla) "খামার ও কৃষি ব্যবসা অ্যাকাউন্ট তৈরি" else "Create Farm Business Account",
                                 subtitle = if (isBangla)
-                                    "একাধিক খামার, পশুপাখি, ডিম, বিক্রি ও হিসাব পরিচালনা করুন"
+                                    "খামার পরিচালনা করুন এবং চাল, গম, সরিষা বা যেকোনো কৃষি পণ্য অনলাইনে বিক্রি করুন"
                                 else
-                                    "Create unlimited farms, manage livestock, eggs, sales & AI insights",
-                                badgeLabel = if (isBangla) "খামারি" else "Farmer / Farm Owner",
+                                    "Manage farms and sell Rice, Wheat, Mustard & any agri products online",
+                                badgeLabel = if (isBangla) "খামার ব্যবসা" else "Farm Business / Seller",
                                 icon = Icons.Default.Agriculture,
-                                submitLabel = if (isBangla) "খামারি অ্যাকাউন্ট তৈরি করুন" else "Create Farmer Account",
+                                submitLabel = if (isBangla) "খামার ব্যবসা অ্যাকাউন্ট তৈরি করুন" else "Create Farm Business Account",
                                 submitTag = "signup_farmer_button",
                                 isBangla = isBangla,
                                 name = regName,
@@ -570,9 +570,9 @@ fun AuthScreen(
                                 onToggleShowPassword = { showRegPassword = !showRegPassword },
                                 onSubmit = { onRegister(regName, regMobile, regEmail, regPassword, UserRole.FARMER) },
                                 alternatePromptLabel = if (isBangla)
-                                    "আগেই খামারি অ্যাকাউন্ট আছে? খামারি লগইন করুন"
+                                    "আগেই খামার অ্যাকাউন্ট আছে? লগইন করুন"
                                 else
-                                    "Already have a farmer account? Farmer Login",
+                                    "Already have a farm business account? Sign In",
                                 onAlternateClick = { switchMode(AuthScreenMode.FARMER_LOGIN) }
                             )
                         }
@@ -611,13 +611,13 @@ fun AuthScreen(
                                         }
                                         Column {
                                             Text(
-                                                if (isBangla) "খামারি লগইন" else "Farmer Login",
+                                                if (isBangla) "খামার ও ব্যবসা লগইন" else "Farm Business Login",
                                                 style = MaterialTheme.typography.titleLarge,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                if (isBangla) "আপনার খামার ড্যাশবোর্ডে প্রবেশ করুন"
-                                                else "Sign in to manage your farms & operations",
+                                                if (isBangla) "আপনার খামার ও অনলাইন পণ্য স্টোরে প্রবেশ করুন"
+                                                else "Sign in to manage farms, online products & orders",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )

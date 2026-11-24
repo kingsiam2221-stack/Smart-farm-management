@@ -608,9 +608,13 @@ class SmartFarmBusinessLogicTest {
         )
         openHelper.writableDatabase.close()
 
-        // Open with Room v3 + MIGRATION_1_2 & MIGRATION_2_3 (Room validates exact schema parity!)
+        // Open with Room v4 + MIGRATION_1_2, MIGRATION_2_3 & MIGRATION_3_4 (Room validates exact schema parity!)
         val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
-            .addMigrations(SmartFarmDatabase.MIGRATION_1_2, SmartFarmDatabase.MIGRATION_2_3)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -795,7 +799,11 @@ class SmartFarmBusinessLogicTest {
         openHelper.writableDatabase.close()
 
         val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
-            .addMigrations(SmartFarmDatabase.MIGRATION_1_2, SmartFarmDatabase.MIGRATION_2_3)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4
+            )
             .allowMainThreadQueries()
             .build()
         try {
@@ -1015,5 +1023,239 @@ class SmartFarmBusinessLogicTest {
             actorUserId = newFarmer.id
         )
         assertEquals(1, repo.observeExpenses(newFarmer.id).first().size)
+    }
+
+    @Test
+    fun roomMigration_v3ToV4_preservesInventoryAndAddsSourcingType() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v3_v4_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(3) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (1, 'v3 Farmer', '01711111111', 'farmer@smartfarm.app', '${PasswordHasher.hash("farmer123")}', 'FARMER', 'ACTIVE', NULL, 'bn', 'BDT', 1000)")
+                        db.execSQL("INSERT INTO farms (id, ownerUserId, farmCode, name, location, address, category, customCategoryName, imageUri, openingDate, managerName, managerPhone, initialInvestment, createdAt) VALUES (1, 1, 'FM-3001', 'v3 Agro Farm', 'Bogura', 'Road 2', 'MIXED', '', NULL, 1000, 'v3 Farmer', '01711111111', 20000.0, 1000)")
+                        db.execSQL("INSERT INTO inventory_items (id, farmId, ownerUserId, name, category, quantity, unit, unitCost, sellingPrice, lowStockThreshold, expiryDate, supplierName, supplierPhone, listInMarketplace, description, imageUri, updatedAt) VALUES (1, 1, 1, 'v3 Stored Rice', 'Rice', 50.0, 'kg', 50.0, 70.0, 10.0, NULL, 'Partner', '017', 1, 'v3 grain', NULL, 2000)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val item = migratedDb.inventoryDao().getItemById(1L)!!
+            assertEquals("v3 Stored Rice", item.name)
+            assertEquals(ProductSourcingType.FARM_PRODUCED.key, item.sourcingType)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun onlineProductMarketplace_supportsAllAgriProductsResellersPagingAndFarmOrderNotifications() = runTest {
+        repo.initializeDatabase()
+
+        // Create two independent Farm Business accounts + a Customer
+        val agroSellerA = repo.register(
+            name = "Padma Agro Crops",
+            mobile = "01711000111",
+            email = "agroA@smartfarm.app",
+            password = "pass1234",
+            role = UserRole.FARMER
+        ).getOrThrow()
+        val agroSellerB = repo.register(
+            name = "Barendra Traders",
+            mobile = "01711000222",
+            email = "agroB@smartfarm.app",
+            password = "pass1234",
+            role = UserRole.FARMER
+        ).getOrThrow()
+        val buyer = repo.register(
+            name = "Tania Akter",
+            mobile = "01811000333",
+            email = "buyer@smartfarm.app",
+            password = "pass1234",
+            role = UserRole.CUSTOMER
+        ).getOrThrow()
+
+        val farmAId = repo.saveFarm(
+            FarmEntity(
+                ownerUserId = agroSellerA.id,
+                farmCode = "FM-AGRO-A",
+                name = "Padma Rice & Wheat Farm",
+                location = "Dinajpur",
+                address = "Sector 1",
+                category = FarmCategory.MIXED.name,
+                managerName = agroSellerA.name,
+                managerPhone = agroSellerA.mobile
+            ),
+            actorUserId = agroSellerA.id
+        ).getOrThrow()
+
+        val farmBId = repo.saveFarm(
+            FarmEntity(
+                ownerUserId = agroSellerB.id,
+                farmCode = "FM-AGRO-B",
+                name = "Barendra Mustard & Spice Hub",
+                location = "Rajshahi",
+                address = "Bazar Road",
+                category = FarmCategory.MIXED.name,
+                managerName = agroSellerB.name,
+                managerPhone = agroSellerB.mobile
+            ),
+            actorUserId = agroSellerB.id
+        ).getOrThrow()
+
+        // Seller A adds Own Harvest Rice + Wheat
+        val riceId = repo.saveOnlineProduct(
+            InventoryItemEntity(
+                farmId = farmAId,
+                ownerUserId = agroSellerA.id,
+                name = "Kataribhog Aromatic Rice",
+                category = "Rice",
+                quantity = 100.0,
+                unit = "kg",
+                unitCost = 70.0,
+                sellingPrice = 95.0,
+                listInMarketplace = true,
+                description = "Aromatic Dinajpur harvest",
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+            ),
+            actorUserId = agroSellerA.id
+        ).getOrThrow()
+
+        val wheatId = repo.saveOnlineProduct(
+            InventoryItemEntity(
+                farmId = farmAId,
+                ownerUserId = agroSellerA.id,
+                name = "Whole Organic Wheat Grain",
+                category = "Wheat",
+                quantity = 80.0,
+                unit = "kg",
+                unitCost = 42.0,
+                sellingPrice = 58.0,
+                listInMarketplace = true,
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+            ),
+            actorUserId = agroSellerA.id
+        ).getOrThrow()
+
+        // Seller B adds Bought & Resold Mustard + Custom category "Mango"
+        val mustardId = repo.saveOnlineProduct(
+            InventoryItemEntity(
+                farmId = farmBId,
+                ownerUserId = agroSellerB.id,
+                name = "Pure Yellow Mustard Seeds",
+                category = "Mustard",
+                quantity = 40.0,
+                unit = "kg",
+                unitCost = 110.0,
+                sellingPrice = 145.0,
+                listInMarketplace = true,
+                description = "Sourced directly from farmers for online resale",
+                sourcingType = ProductSourcingType.PURCHASED_RESALE.key
+            ),
+            actorUserId = agroSellerB.id
+        ).getOrThrow()
+
+        val mangoId = repo.saveOnlineProduct(
+            InventoryItemEntity(
+                farmId = farmBId,
+                ownerUserId = agroSellerB.id,
+                name = "Himsagar Fresh Mango",
+                category = "Mango",
+                quantity = 25.0,
+                unit = "kg",
+                unitCost = 85.0,
+                sellingPrice = 120.0,
+                listInMarketplace = true,
+                sourcingType = ProductSourcingType.PURCHASED_RESALE.key
+            ),
+            actorUserId = agroSellerB.id
+        ).getOrThrow()
+
+        // Verify scalable indexed SQL search + category filtering + pagination
+        val mustardCategoryMatches = repo.observeMarketplaceItemsFiltered("", "Mustard", 30).first()
+        assertTrue(mustardCategoryMatches.size >= 2)
+        assertTrue(mustardCategoryMatches.any { it.id == mustardId })
+
+        val mustardExactMatches = repo.observeMarketplaceItemsFiltered("Pure Yellow Mustard", null, 30).first()
+        assertEquals(1, mustardExactMatches.size)
+        assertEquals(mustardId, mustardExactMatches.first().id)
+
+        val paged2 = repo.observeMarketplaceItemsFiltered("", null, 2).first()
+        val totalLive = repo.countMarketplaceItemsFiltered("", null).first()
+        assertEquals(2, paged2.size)
+        assertTrue(totalLive >= 9) // 5 seeded + 4 newly added
+
+        val riceItem = db.inventoryDao().getItemById(riceId)!!
+        val wheatItem = db.inventoryDao().getItemById(wheatId)!!
+        val mustardItem = db.inventoryDao().getItemById(mustardId)!!
+        val mangoItem = db.inventoryDao().getItemById(mangoId)!!
+
+        // Insufficient stock rejection check
+        val overStockOrder = repo.placeOnlineOrder(
+            customer = buyer,
+            deliveryAddress = "House 12, Uttara, Dhaka",
+            paymentMethod = "bKash",
+            cartItems = listOf(mangoItem to 50.0),
+            farmsMap = emptyMap()
+        )
+        assertTrue(overStockOrder.isFailure)
+
+        // Valid cross-farm order: splits into separate orders and notifies each exact farm owner!
+        val createdOrders = repo.placeOnlineOrder(
+            customer = buyer,
+            deliveryAddress = "House 12, Uttara, Dhaka",
+            paymentMethod = "bKash",
+            cartItems = listOf(riceItem to 5.0, mustardItem to 2.0),
+            farmsMap = emptyMap()
+        ).getOrThrow()
+
+        assertEquals(2, createdOrders.size)
+        val orderForFarmA = createdOrders.first { it.farmId == farmAId }
+        val orderForFarmB = createdOrders.first { it.farmId == farmBId }
+        assertEquals(agroSellerA.id, orderForFarmA.farmOwnerUserId)
+        assertEquals(agroSellerB.id, orderForFarmB.farmOwnerUserId)
+        assertEquals(475.0, orderForFarmA.totalAmount, 0.01)
+        assertEquals(290.0, orderForFarmB.totalAmount, 0.01)
+
+        // Seller A sees ONLY farmA order & farmA notification; Seller B sees ONLY farmB order & farmB notification
+        val sellerAOrders = repo.observeFarmerOrders(agroSellerA.id).first()
+        val sellerBOrders = repo.observeFarmerOrders(agroSellerB.id).first()
+        assertEquals(1, sellerAOrders.size)
+        assertEquals(1, sellerBOrders.size)
+        assertEquals(farmAId, sellerAOrders.first().farmId)
+        assertEquals(farmBId, sellerBOrders.first().farmId)
+
+        val sellerANotifs = repo.observeNotifications(agroSellerA.id).first().filter { it.category == "ORDER" }
+        val sellerBNotifs = repo.observeNotifications(agroSellerB.id).first().filter { it.category == "ORDER" }
+        assertTrue(sellerANotifs.any { it.title.contains(orderForFarmA.orderNumber) && it.message.contains("Padma Rice & Wheat Farm") })
+        assertTrue(sellerANotifs.none { it.title.contains(orderForFarmB.orderNumber) })
+        assertTrue(sellerBNotifs.any { it.title.contains(orderForFarmB.orderNumber) && it.message.contains("Barendra Mustard & Spice Hub") })
+        assertTrue(sellerBNotifs.none { it.title.contains(orderForFarmA.orderNumber) })
+
+        // Verify pausing wheat removes it from marketplace
+        repo.setOnlineProductVisibility(wheatItem, isLive = false, actorUserId = agroSellerA.id).getOrThrow()
+        assertTrue(repo.observeMarketplaceItemsFiltered("Wheat", null, 30).first().isEmpty())
     }
 }

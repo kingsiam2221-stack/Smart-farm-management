@@ -182,6 +182,9 @@ class MainActivity : ComponentActivity() {
                                             onRequestCancelOrder = viewModel::requestOrderCancellation,
                                             onMarkNotificationsRead = viewModel::markNotificationsRead,
                                             onUpdateProfile = viewModel::updateProfile,
+                                            onSearchChange = viewModel::updateMarketplaceSearch,
+                                            onSelectCategory = viewModel::selectMarketplaceCategory,
+                                            onLoadMore = viewModel::loadMoreMarketplaceItems,
                                             onSelectLanguage = viewModel::setLanguage,
                                             onSelectCurrency = viewModel::setCurrency,
                                             onSelectDarkMode = viewModel::setDarkMode,
@@ -216,7 +219,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class FarmerSection {
-    DASHBOARD, FARMS, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE
+    DASHBOARD, FARMS, ONLINE_PRODUCTS, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE
 }
 
 private data class NavEntry(
@@ -230,6 +233,8 @@ private fun isSectionPermitted(sec: FarmerSection, policy: EmployeeAccessPolicy)
         policy.hasAny(AppPermission.DASHBOARD_OVERVIEW, AppPermission.DASHBOARD_CHARTS, AppPermission.AI_ADVISOR) || policy.isAdminOwner
     FarmerSection.FARMS ->
         policy.hasAny(AppPermission.FARMS_VIEW, AppPermission.FARMS_CREATE_EDIT, AppPermission.FARMS_DELETE)
+    FarmerSection.ONLINE_PRODUCTS ->
+        policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE)
     FarmerSection.LIVESTOCK ->
         policy.hasAny(AppPermission.LIVESTOCK_VIEW, AppPermission.LIVESTOCK_CREATE_EDIT, AppPermission.LIVESTOCK_HEALTH_EVENTS)
     FarmerSection.EGGS ->
@@ -265,6 +270,7 @@ private fun FarmerShell(
         listOf(
             NavEntry(FarmerSection.DASHBOARD, strings.dashboard, Icons.Default.Dashboard),
             NavEntry(FarmerSection.FARMS, strings.farms, Icons.Default.Agriculture),
+            NavEntry(FarmerSection.ONLINE_PRODUCTS, strings.onlineProducts, Icons.Default.Storefront),
             NavEntry(FarmerSection.LIVESTOCK, strings.livestock, Icons.Default.Pets),
             NavEntry(FarmerSection.EGGS, strings.eggs, Icons.Default.Egg),
             NavEntry(FarmerSection.OPERATIONS, strings.operations, Icons.Default.Inventory2),
@@ -281,7 +287,9 @@ private fun FarmerShell(
     var section by remember(user.id) { mutableStateOf(FarmerSection.DASHBOARD) }
     var moreInitialTab by remember { mutableStateOf(MoreTab.REPORTS) }
     var operationsInitialTab by remember { mutableStateOf(OperationsTab.INVENTORY) }
+    var commerceInitialTab by remember { mutableStateOf(CommerceTab.SALES) }
     var openCreateFarmOnEntry by remember { mutableStateOf(false) }
+    var openAddOnlineProductOnEntry by remember { mutableStateOf(false) }
     var showAiAdvisor by remember { mutableStateOf(false) }
     val aiViewModel: FarmAiViewModel = viewModel()
     val unreadCount = if (policy.has(AppPermission.ALERTS_CAUTION_VIEW)) notifications.count { !it.readFlag } else 0
@@ -330,6 +338,7 @@ private fun FarmerShell(
                                 onClick = {
                                     if (entry.section == FarmerSection.MORE) moreInitialTab = MoreTab.REPORTS
                                     if (entry.section == FarmerSection.OPERATIONS) operationsInitialTab = OperationsTab.INVENTORY
+                                    if (entry.section == FarmerSection.COMMERCE) commerceInitialTab = CommerceTab.SALES
                                     section = entry.section
                                 },
                                 icon = {
@@ -353,6 +362,7 @@ private fun FarmerShell(
                                 onClick = {
                                     if (entry.section == FarmerSection.MORE) moreInitialTab = MoreTab.REPORTS
                                     if (entry.section == FarmerSection.OPERATIONS) operationsInitialTab = OperationsTab.INVENTORY
+                                    if (entry.section == FarmerSection.COMMERCE) commerceInitialTab = CommerceTab.SALES
                                     section = entry.section
                                 },
                                 icon = {
@@ -381,11 +391,12 @@ private fun FarmerShell(
                                             onClick = { section = entry.section },
                                             label = { Text(entry.label) },
                                             leadingIcon = { Icon(entry.icon, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                            modifier = if (entry.section == FarmerSection.GUIDE) {
-                                                Modifier.testTag("mobile_guide_chip")
-                                            } else if (entry.section == FarmerSection.PERMISSIONS) {
-                                                Modifier.testTag("mobile_permissions_chip")
-                                            } else Modifier
+                                            modifier = when (entry.section) {
+                                                FarmerSection.GUIDE -> Modifier.testTag("mobile_guide_chip")
+                                                FarmerSection.PERMISSIONS -> Modifier.testTag("mobile_permissions_chip")
+                                                FarmerSection.ONLINE_PRODUCTS -> Modifier.testTag("mobile_online_products_chip")
+                                                else -> Modifier
+                                            }
                                         )
                                     }
                                 }
@@ -449,7 +460,18 @@ private fun FarmerShell(
                                 },
                                 onOpenLivestock = { section = FarmerSection.LIVESTOCK },
                                 onOpenEggs = { section = FarmerSection.EGGS },
-                                onOpenSales = { section = FarmerSection.COMMERCE },
+                                onOpenSales = {
+                                    commerceInitialTab = CommerceTab.SALES
+                                    section = FarmerSection.COMMERCE
+                                },
+                                onOpenOrders = {
+                                    commerceInitialTab = CommerceTab.ORDERS
+                                    section = FarmerSection.COMMERCE
+                                },
+                                onOpenOnlineProducts = {
+                                    openAddOnlineProductOnEntry = false
+                                    section = FarmerSection.ONLINE_PRODUCTS
+                                },
                                 onOpenInventory = {
                                     operationsInitialTab = OperationsTab.INVENTORY
                                     section = FarmerSection.OPERATIONS
@@ -483,6 +505,27 @@ private fun FarmerShell(
                                 onSelectFarm = viewModel::selectActiveFarm,
                                 onSaveFarm = viewModel::saveFarm,
                                 onDeleteFarm = viewModel::deleteFarm,
+                                onOpenSubscription = openSubscriptionTab
+                            )
+
+                            FarmerSection.ONLINE_PRODUCTS -> OnlineProductsScreen(
+                                state = farmerState,
+                                strings = strings,
+                                currency = currentCurrency,
+                                openAddOnEntry = openAddOnlineProductOnEntry,
+                                onAddEntryConsumed = { openAddOnlineProductOnEntry = false },
+                                onSelectFarm = viewModel::selectActiveFarm,
+                                onSaveOnlineProduct = viewModel::saveOnlineProduct,
+                                onToggleLive = viewModel::toggleOnlineProductVisibility,
+                                onDeleteProduct = viewModel::deleteOnlineProduct,
+                                onOpenAddFarm = {
+                                    openCreateFarmOnEntry = true
+                                    section = FarmerSection.FARMS
+                                },
+                                onOpenOrders = {
+                                    commerceInitialTab = CommerceTab.ORDERS
+                                    section = FarmerSection.COMMERCE
+                                },
                                 onOpenSubscription = openSubscriptionTab
                             )
 
@@ -531,6 +574,7 @@ private fun FarmerShell(
                                 state = farmerState,
                                 strings = strings,
                                 currency = currentCurrency,
+                                initialTab = commerceInitialTab,
                                 onSelectFarm = viewModel::selectActiveFarm,
                                 onCreateSale = viewModel::createSale,
                                 onSettleDue = viewModel::settleSaleDue,

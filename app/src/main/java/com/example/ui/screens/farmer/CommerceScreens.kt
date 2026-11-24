@@ -50,6 +50,7 @@ fun CommerceScreen(
     state: FarmerDashboardState,
     strings: AppStrings,
     currency: CurrencyOption,
+    initialTab: CommerceTab = CommerceTab.SALES,
     onSelectFarm: (Long?) -> Unit,
     onCreateSale: (Long, Long?, String, String, String, String, InventoryItemEntity?, AnimalRecordEntity?, Double, Double, Double, Double, String) -> Unit,
     onSettleDue: (SaleEntity, Double) -> Unit,
@@ -103,7 +104,9 @@ fun CommerceScreen(
         return
     }
 
-    var selectedTab by remember(visibleTabs) { mutableStateOf(visibleTabs.first()) }
+    var selectedTab by remember(visibleTabs, initialTab) {
+        mutableStateOf(if (initialTab in visibleTabs) initialTab else visibleTabs.first())
+    }
     val selectedIdx = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)
     val pendingOrders = state.incomingOrders.count { it.status == OrderStatus.PENDING.name }
     val ordersTitle = tr("Orders", "অর্ডার")

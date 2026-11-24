@@ -56,6 +56,13 @@ enum class SubscriptionFeature(
         descEn = "Create sales, collect dues, manage customers & orders",
         descBn = "বিক্রয় ইনভয়েস, বকেয়া আদায়, গ্রাহক ও অনলাইন অর্ডার"
     ),
+    ONLINE_PRODUCT_STORE(
+        key = "ONLINE_PRODUCT_STORE",
+        titleEn = "Online Product Add & Marketplace Store",
+        titleBn = "অনলাইন পণ্য যোগ ও মার্কেটপ্লেস স্টোর",
+        descEn = "List rice, wheat, mustard & any agricultural goods online",
+        descBn = "চাল, গম, সরিষাসহ যেকোনো কৃষি পণ্য অনলাইনে যোগ ও বিক্রি"
+    ),
     FINANCIAL_REPORTS_EXPORT(
         key = "FINANCIAL_REPORTS_EXPORT",
         titleEn = "Financial Reports & PDF/CSV Export",

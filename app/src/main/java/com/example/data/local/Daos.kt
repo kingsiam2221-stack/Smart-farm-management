@@ -43,6 +43,9 @@ interface FarmDao {
     @Query("SELECT * FROM farms ORDER BY createdAt DESC")
     fun observeAllFarms(): Flow<List<FarmEntity>>
 
+    @Query("SELECT * FROM farms WHERE id IN (SELECT DISTINCT farmId FROM inventory_items WHERE listInMarketplace = 1 AND quantity > 0)")
+    fun observeMarketplaceFarms(): Flow<List<FarmEntity>>
+
     @Query("SELECT * FROM farms WHERE id = :farmId LIMIT 1")
     suspend fun getFarmById(farmId: Long): FarmEntity?
 
@@ -114,6 +117,27 @@ interface InventoryDao {
 
     @Query("SELECT * FROM inventory_items WHERE listInMarketplace = 1 AND quantity > 0 ORDER BY updatedAt DESC")
     fun observeMarketplaceItems(): Flow<List<InventoryItemEntity>>
+
+    @Query("""
+        SELECT * FROM inventory_items
+        WHERE listInMarketplace = 1 AND quantity > 0
+          AND (:category IS NULL OR category = :category)
+          AND (:search = '' OR name LIKE '%' || :search || '%' OR description LIKE '%' || :search || '%' OR category LIKE '%' || :search || '%')
+        ORDER BY updatedAt DESC
+        LIMIT :limit
+    """)
+    fun observeMarketplaceItemsFiltered(search: String, category: String?, limit: Int): Flow<List<InventoryItemEntity>>
+
+    @Query("""
+        SELECT COUNT(*) FROM inventory_items
+        WHERE listInMarketplace = 1 AND quantity > 0
+          AND (:category IS NULL OR category = :category)
+          AND (:search = '' OR name LIKE '%' || :search || '%' OR description LIKE '%' || :search || '%' OR category LIKE '%' || :search || '%')
+    """)
+    fun countMarketplaceItemsFiltered(search: String, category: String?): Flow<Int>
+
+    @Query("SELECT DISTINCT category FROM inventory_items WHERE listInMarketplace = 1 AND quantity > 0 ORDER BY category ASC")
+    fun observeMarketplaceCategories(): Flow<List<String>>
 
     @Query("SELECT * FROM inventory_items WHERE id = :id LIMIT 1")
     suspend fun getItemById(id: Long): InventoryItemEntity?

@@ -44,6 +44,11 @@ data class FarmerDashboardState(
 
 data class CustomerPortalState(
     val marketplaceItems: List<InventoryItemEntity> = emptyList(),
+    val availableCategories: List<String> = emptyList(),
+    val totalMatchingCount: Int = 0,
+    val searchQuery: String = "",
+    val selectedCategory: String? = null,
+    val pageSizeLimit: Int = 30,
     val farmsById: Map<Long, FarmEntity> = emptyMap(),
     val cart: List<CartEntry> = emptyList(),
     val orders: List<OrderEntity> = emptyList()
@@ -119,6 +124,9 @@ class SmartFarmViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EmployeeAccessPolicy())
 
     private val _cart = MutableStateFlow<List<CartEntry>>(emptyList())
+    private val _marketplaceSearch = MutableStateFlow("")
+    private val _marketplaceCategory = MutableStateFlow<String?>(null)
+    private val _marketplaceLimit = MutableStateFlow(30)
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
@@ -202,18 +210,39 @@ class SmartFarmViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FarmerDashboardState())
 
+    private val marketplaceFeedFlow = combine(
+        _marketplaceSearch,
+        _marketplaceCategory,
+        _marketplaceLimit
+    ) { search, category, limit ->
+        Triple(search.trim(), category, limit)
+    }.flatMapLatest { (search, category, limit) ->
+        combine(
+            repository.observeMarketplaceItemsFiltered(search, category, limit),
+            repository.countMarketplaceItemsFiltered(search, category),
+            repository.observeMarketplaceCategories()
+        ) { items, totalCount, categories ->
+            Tuple5(items, categories, totalCount, Triple(search, category, limit), Unit)
+        }
+    }
+
     val customerState: StateFlow<CustomerPortalState> = currentUser.flatMapLatest { user ->
         if (user == null || user.role != UserRole.CUSTOMER.name) {
             flowOf(CustomerPortalState())
         } else {
             combine(
-                repository.observeMarketplaceItems(),
-                repository.observeAllFarmsPublic(),
+                marketplaceFeedFlow,
+                repository.observeMarketplaceFarms(),
                 _cart,
                 repository.observeCustomerOrders(user.id)
-            ) { items, farms, cart, orders ->
+            ) { feed, farms, cart, orders ->
                 CustomerPortalState(
-                    marketplaceItems = items,
+                    marketplaceItems = feed.a,
+                    availableCategories = feed.b,
+                    totalMatchingCount = feed.c,
+                    searchQuery = feed.d.first,
+                    selectedCategory = feed.d.second,
+                    pageSizeLimit = feed.d.third,
                     farmsById = farms.associateBy { it.id },
                     cart = cart,
                     orders = orders
@@ -298,10 +327,26 @@ class SmartFarmViewModel(
             "An account with this email already exists." -> "এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট তৈরি করা হয়েছে।"
             "New password must be at least 4 characters." -> "নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।"
             "Account not found." -> "অ্যাকাউন্ট পাওয়া যায়নি।"
-            else -> if (raw?.startsWith("Subscription required:") == true) {
-                "এই অপশনটি ব্যবহার করতে সক্রিয় সাবস্ক্রিপশন প্রয়োজন।"
-            } else {
-                raw ?: fallbackBn
+            "Product name is required." -> "পণ্যের নাম প্রয়োজন।"
+            "Product category is required." -> "পণ্যের ধরন প্রয়োজন।"
+            "Online selling price must be greater than 0." -> "অনলাইন বিক্রয় মূল্য ০-এর বেশি হতে হবে।"
+            "Quantity cannot be negative." -> "পরিমাণ ঋণাত্মক হতে পারবে না।"
+            "Please select a valid farm before adding online products." -> "অনলাইন পণ্য যোগ করার আগে একটি বৈধ খামার নির্বাচন করুন।"
+            "Selected farm does not belong to this farm account." -> "নির্বাচিত খামারটি এই খামার অ্যাকাউন্টের নয়।"
+            "Set a selling price before publishing online." -> "অনলাইনে প্রকাশ করার আগে বিক্রয় মূল্য নির্ধারণ করুন।"
+            "Cart is empty." -> "কার্ট খালি আছে।"
+            "Delivery address is required." -> "ডেলিভারি ঠিকানা প্রয়োজন।"
+            "Access denied: You don't have permission for this option." -> "অনুমতি নেই: এই অপশনের অ্যাক্সেস আপনার নেই।"
+            else -> when {
+                raw?.startsWith("Subscription required:") == true ->
+                    "এই অপশনটি ব্যবহার করতে সক্রিয় সাবস্ক্রিপশন প্রয়োজন।"
+                raw?.endsWith("is currently paused or out of stock.") == true ->
+                    "এই পণ্যটি বর্তমানে বন্ধ আছে বা স্টকে নেই।"
+                raw?.endsWith("is no longer available.") == true ->
+                    "এই পণ্যটি আর পাওয়া যাচ্ছে না।"
+                raw?.startsWith("Only ") == true ->
+                    "স্টকে পর্যাপ্ত পরিমাণ নেই।"
+                else -> raw ?: fallbackBn
             }
         }
     }
@@ -352,6 +397,9 @@ class SmartFarmViewModel(
     fun logout() {
         viewModelScope.launch {
             _cart.value = emptyList()
+            _marketplaceSearch.value = ""
+            _marketplaceCategory.value = null
+            _marketplaceLimit.value = 30
             prefsRepo.setCurrentUserId(null)
         }
     }
@@ -598,6 +646,65 @@ class SmartFarmViewModel(
             runPermitted { _, actor ->
                 repository.deleteInventoryItem(item, actorUserId = actor)
             }
+        }
+    }
+
+    // --- Online Product Add & Storefront ---
+    fun saveOnlineProduct(item: InventoryItemEntity) {
+        val ownerId = effectiveOwnerId()
+        val actor = actorId()
+        if (ownerId == null || actor == null) return
+        viewModelScope.launch {
+            repository.saveOnlineProduct(item.copy(ownerUserId = ownerId), actorUserId = actor)
+                .onSuccess {
+                    val liveLabel = if (item.listInMarketplace) {
+                        msg("published to Online Marketplace.", "অনলাইন মার্কেটপ্লেসে প্রকাশিত হয়েছে।")
+                    } else {
+                        msg("saved as paused listing.", "খসড়া / বিরতি তালিকায় সংরক্ষিত হয়েছে।")
+                    }
+                    _snackbarMessage.value = "${item.name.trim()} $liveLabel"
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(
+                        err.message,
+                        "Could not save online product.",
+                        "অনলাইন পণ্য সংরক্ষণ করা যায়নি।"
+                    )
+                }
+        }
+    }
+
+    fun toggleOnlineProductVisibility(item: InventoryItemEntity, isLive: Boolean) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.setOnlineProductVisibility(item, isLive, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = if (isLive) {
+                        msg("${item.name} is now LIVE online.", "${item.name} এখন অনলাইনে লাইভ হয়েছে।")
+                    } else {
+                        msg("${item.name} paused from online store.", "${item.name} অনলাইন বিক্রি থেকে বিরতিতে রাখা হয়েছে।")
+                    }
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(
+                        err.message,
+                        "Action denied.",
+                        "অনুমতি বা মূল্য পরীক্ষা করুন।"
+                    )
+                }
+        }
+    }
+
+    fun deleteOnlineProduct(item: InventoryItemEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteOnlineProduct(item, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg("${item.name} deleted.", "${item.name} মুছে ফেলা হয়েছে।")
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(err.message, "Could not delete.", "মুছে ফেলা যায়নি।")
+                }
         }
     }
 
@@ -904,6 +1011,20 @@ class SmartFarmViewModel(
     }
 
     // --- Customer Shopping Cart & Ordering ---
+    fun updateMarketplaceSearch(query: String) {
+        _marketplaceSearch.value = query
+        _marketplaceLimit.value = 30
+    }
+
+    fun selectMarketplaceCategory(category: String?) {
+        _marketplaceCategory.value = category
+        _marketplaceLimit.value = 30
+    }
+
+    fun loadMoreMarketplaceItems() {
+        _marketplaceLimit.update { it + 30 }
+    }
+
     fun addToCart(item: InventoryItemEntity, qty: Double = 1.0) {
         _cart.update { current ->
             val existing = current.find { it.item.id == item.id }
@@ -956,7 +1077,7 @@ class SmartFarmViewModel(
                 )
                 onSuccess()
             }.onFailure {
-                _snackbarMessage.value = it.message ?: msg("Failed to place order.", "অর্ডার করা যায়নি।")
+                _snackbarMessage.value = localizeError(it.message, "Failed to place order.", "অর্ডার করা যায়নি।")
             }
         }
     }

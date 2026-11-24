@@ -436,7 +436,44 @@ object DatabaseSeeder {
                 supplierName = "Sunbeam Hatchery",
                 supplierPhone = "+8801744556677",
                 listInMarketplace = true,
-                description = "Protein-rich speckled quail eggs from healthy Coturnix birds."
+                description = "Protein-rich speckled quail eggs from healthy Coturnix birds.",
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+            )
+        )
+        invDao.insertItem(
+            InventoryItemEntity(
+                farmId = farm1Id,
+                ownerUserId = farmerId,
+                name = "Miniket Premium Rice (5kg Pack)",
+                category = "Rice",
+                quantity = 120.0,
+                unit = "pack",
+                unitCost = 340.0,
+                sellingPrice = 420.0,
+                lowStockThreshold = 15.0,
+                supplierName = "Green Valley Agro Harvest",
+                supplierPhone = "+8801722334455",
+                listInMarketplace = true,
+                description = "Clean, aged Dinajpur Miniket rice harvested and packed directly from partner fields.",
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+            )
+        )
+        invDao.insertItem(
+            InventoryItemEntity(
+                farmId = farm3Id,
+                ownerUserId = farmerId,
+                name = "Deshi Pure Mustard Seeds & Oil (1L)",
+                category = "Mustard",
+                quantity = 65.0,
+                unit = "liter",
+                unitCost = 210.0,
+                sellingPrice = 285.0,
+                lowStockThreshold = 10.0,
+                supplierName = "Bogura Farmers Cooperative",
+                supplierPhone = "+8801744556677",
+                listInMarketplace = true,
+                description = "Cold-pressed mustard oil and fresh mustard seeds sourced from Bogura growers for resale.",
+                sourcingType = ProductSourcingType.PURCHASED_RESALE.key
             )
         )
         invDao.insertItem(

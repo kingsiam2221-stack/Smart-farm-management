@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EmployeePermissionEntity::class,
         CustomPermissionOptionEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class SmartFarmDatabase : RoomDatabase() {
@@ -110,6 +110,16 @@ abstract class SmartFarmDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN sourcingType TEXT NOT NULL DEFAULT 'FARM_PRODUCED'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_listInMarketplace_quantity_updatedAt` ON `inventory_items` (`listInMarketplace`, `quantity`, `updatedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_inventory_items_category` ON `inventory_items` (`category`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_orders_farmOwnerUserId_status_createdAt` ON `orders` (`farmOwnerUserId`, `status`, `createdAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notifications_targetUserId_readFlag_createdAt` ON `notifications` (`targetUserId`, `readFlag`, `createdAt`)")
+            }
+        }
+
         fun getInstance(context: Context): SmartFarmDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -117,7 +127,7 @@ abstract class SmartFarmDatabase : RoomDatabase() {
                     SmartFarmDatabase::class.java,
                     "smart_farm_management.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                     .also { INSTANCE = it }

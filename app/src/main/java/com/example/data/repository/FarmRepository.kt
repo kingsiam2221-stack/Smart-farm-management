@@ -118,6 +118,12 @@ class FarmRepository(private val db: SmartFarmDatabase) {
 
     // --- Customer Marketplace Streams ---
     fun observeMarketplaceItems(): Flow<List<InventoryItemEntity>> = inventoryDao.observeMarketplaceItems()
+    fun observeMarketplaceItemsFiltered(search: String, category: String?, limit: Int): Flow<List<InventoryItemEntity>> =
+        inventoryDao.observeMarketplaceItemsFiltered(search, category, limit)
+    fun countMarketplaceItemsFiltered(search: String, category: String?): Flow<Int> =
+        inventoryDao.countMarketplaceItemsFiltered(search, category)
+    fun observeMarketplaceCategories(): Flow<List<String>> = inventoryDao.observeMarketplaceCategories()
+    fun observeMarketplaceFarms(): Flow<List<FarmEntity>> = farmDao.observeMarketplaceFarms()
     fun observeAllFarmsPublic(): Flow<List<FarmEntity>> = farmDao.observeAllFarms()
     fun observeCustomerOrders(customerId: Long): Flow<List<OrderEntity>> = commerceDao.observeOrdersForCustomer(customerId)
 
@@ -549,6 +555,89 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         inventoryDao.deleteItem(item)
     }
 
+    // --- Dedicated Online Product Storefront (Farm Business Accounts) ---
+    suspend fun saveOnlineProduct(item: InventoryItemEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.ONLINE_PRODUCTS_MANAGE)
+        requireActiveSubscription(item.ownerUserId, actorUserId, SubscriptionFeature.ONLINE_PRODUCT_STORE)
+
+        val cleanName = item.name.trim()
+        val cleanCategory = item.category.trim()
+        if (cleanName.isBlank()) throw IllegalArgumentException("Product name is required.")
+        if (cleanCategory.isBlank()) throw IllegalArgumentException("Product category is required.")
+        if (item.sellingPrice <= 0.0) throw IllegalArgumentException("Online selling price must be greater than 0.")
+        if (item.quantity < 0.0) throw IllegalArgumentException("Quantity cannot be negative.")
+
+        val farm = farmDao.getFarmById(item.farmId)
+            ?: throw IllegalArgumentException("Please select a valid farm before adding online products.")
+        if (farm.ownerUserId != item.ownerUserId) {
+            throw SecurityException("Selected farm does not belong to this farm account.")
+        }
+
+        val normalized = item.copy(
+            name = cleanName,
+            category = cleanCategory,
+            unit = item.unit.trim().ifBlank { "kg" },
+            supplierName = item.supplierName.trim().ifBlank { farm.name },
+            supplierPhone = item.supplierPhone.trim().ifBlank { farm.managerPhone },
+            description = item.description.trim(),
+            sourcingType = if (item.sourcingType == ProductSourcingType.PURCHASED_RESALE.key) {
+                ProductSourcingType.PURCHASED_RESALE.key
+            } else {
+                ProductSourcingType.FARM_PRODUCED.key
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+
+        if (normalized.id == 0L) {
+            val id = inventoryDao.insertItem(normalized)
+            if (normalized.quantity > 0.0) {
+                inventoryDao.insertMovement(
+                    InventoryMovementEntity(
+                        inventoryItemId = id,
+                        farmId = normalized.farmId,
+                        ownerUserId = normalized.ownerUserId,
+                        movementType = "STOCK_IN",
+                        quantityDelta = normalized.quantity,
+                        unitCost = normalized.unitCost,
+                        supplierName = normalized.supplierName,
+                        note = if (normalized.sourcingType == ProductSourcingType.PURCHASED_RESALE.key) {
+                            "Purchased & listed for online resale"
+                        } else {
+                            "Added directly for online sale"
+                        }
+                    )
+                )
+            }
+            id
+        } else {
+            inventoryDao.updateItem(normalized)
+            normalized.id
+        }
+    }
+
+    suspend fun setOnlineProductVisibility(
+        item: InventoryItemEntity,
+        isLive: Boolean,
+        actorUserId: Long? = null
+    ): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.ONLINE_PRODUCTS_MANAGE)
+        requireActiveSubscription(item.ownerUserId, actorUserId, SubscriptionFeature.ONLINE_PRODUCT_STORE)
+        if (isLive && item.sellingPrice <= 0.0) {
+            throw IllegalArgumentException("Set a selling price before publishing online.")
+        }
+        inventoryDao.updateItem(
+            item.copy(
+                listInMarketplace = isLive,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun deleteOnlineProduct(item: InventoryItemEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.ONLINE_PRODUCTS_MANAGE)
+        inventoryDao.deleteItem(item)
+    }
+
     private suspend fun checkLowStockNotification(item: InventoryItemEntity) {
         if (item.quantity <= item.lowStockThreshold) {
             subAdminDao.insertNotification(
@@ -698,7 +787,26 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         if (cartItems.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty."))
         if (deliveryAddress.isBlank()) return Result.failure(IllegalArgumentException("Delivery address is required."))
 
-        val groupedByFarm = cartItems.groupBy { it.first.farmId }
+        // Verify live stock and prices against the database so concurrent or stale carts cannot over-order
+        val verifiedItems = mutableListOf<Pair<InventoryItemEntity, Double>>()
+        for ((cartItem, requestedQty) in cartItems) {
+            if (requestedQty <= 0.0) {
+                return Result.failure(IllegalArgumentException("Quantity must be greater than zero for ${cartItem.name}."))
+            }
+            val liveItem = inventoryDao.getItemById(cartItem.id)
+                ?: return Result.failure(IllegalStateException("${cartItem.name} is no longer available."))
+            if (!liveItem.listInMarketplace || liveItem.quantity <= 0.0) {
+                return Result.failure(IllegalStateException("${liveItem.name} is currently paused or out of stock."))
+            }
+            if (liveItem.quantity < requestedQty) {
+                return Result.failure(
+                    IllegalStateException("Only ${liveItem.quantity.toInt()} ${liveItem.unit} left for ${liveItem.name}.")
+                )
+            }
+            verifiedItems += liveItem to requestedQty
+        }
+
+        val groupedByFarm = verifiedItems.groupBy { it.first.farmId }
         val createdOrders = mutableListOf<OrderEntity>()
         for ((farmId, items) in groupedByFarm) {
             val farm = farmsMap[farmId] ?: farmDao.getFarmById(farmId)
@@ -706,7 +814,10 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             val farmName = farm?.name ?: "Smart Farm"
             val total = items.sumOf { it.first.sellingPrice * it.second }
             val summary = items.joinToString(", ") { "${it.second.toInt()}x ${it.first.name}" }
-            val serialized = items.joinToString("|") { "${it.first.id}:${it.second}:${it.first.sellingPrice}:${it.first.name}" }
+            val serialized = items.joinToString("|") {
+                val safeName = it.first.name.replace("|", "/").replace(":", " ")
+                "${it.first.id}:${it.second}:${it.first.sellingPrice}:$safeName"
+            }
             val orderNo = "ORD-${(1000..9999).random()}"
 
             val order = OrderEntity(
@@ -730,8 +841,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             subAdminDao.insertNotification(
                 AppNotificationEntity(
                     targetUserId = farmOwnerId,
-                    title = "New Customer Order $orderNo",
-                    message = "${customer.name} ordered $summary ($farmName).",
+                    title = "New Online Order $orderNo • $farmName",
+                    message = "${customer.name} (${customer.mobile}) ordered $summary for $farmName. Total: ${total.toInt()} BDT.",
                     category = "ORDER"
                 )
             )
