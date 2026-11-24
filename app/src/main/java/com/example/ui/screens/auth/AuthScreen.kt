@@ -35,12 +35,16 @@ import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyOption
 import com.example.ui.components.LanguageCurrencyDialog
+import com.example.ui.components.nextThemeModeOverride
+import com.example.ui.components.themeModeIcon
+import com.example.ui.components.themeModeLabel
 
 private enum class AuthScreenMode {
     CUSTOMER_LOGIN,
     CREATE_CUSTOMER,
     CREATE_FARMER,
     FARMER_LOGIN,
+    EMPLOYEE_LOGIN,
     FORGOT_PASSWORD
 }
 
@@ -152,6 +156,20 @@ fun AuthScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         FilterChip(
+                            selected = darkModeOverride != null,
+                            onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
+                            label = { Text(themeModeLabel(darkModeOverride), fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = {
+                                Icon(
+                                    themeModeIcon(darkModeOverride),
+                                    contentDescription = strings.themeMode,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            modifier = Modifier.testTag("auth_theme_toggle")
+                        )
+
+                        FilterChip(
                             selected = isBangla,
                             onClick = {
                                 onSelectLanguage(if (isBangla) AppLanguage.EN else AppLanguage.BN)
@@ -245,6 +263,9 @@ fun AuthScreen(
                                 AuthScreenMode.FARMER_LOGIN ->
                                     if (isBangla) "খামারি অ্যাকাউন্টে প্রবেশ করুন"
                                     else "Farmer Login • Access your farms, inventory & AI advisor"
+                                AuthScreenMode.EMPLOYEE_LOGIN ->
+                                    if (isBangla) "কর্মচারী লগইন • অ্যাডমিনের অনুমোদিত অপশন দেখুন"
+                                    else "Employee Login • Access options granted by your Farm Admin"
                                 AuthScreenMode.FORGOT_PASSWORD ->
                                     if (isBangla) "আপনার অ্যাকাউন্টের পাসওয়ার্ড রিসেট করুন"
                                     else "Reset your account password securely"
@@ -469,6 +490,27 @@ fun AuthScreen(
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
+
+                                    // Employee / Staff Login button
+                                    OutlinedButton(
+                                        onClick = { switchMode(AuthScreenMode.EMPLOYEE_LOGIN) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("employee_login_option_button")
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Badge,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            if (isBangla) "কর্মচারী লগইন (অনুমতি ভিত্তিক প্রবেশ)"
+                                            else "Employee Login (Permission-Based Staff)",
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -668,6 +710,120 @@ fun AuthScreen(
                             }
                         }
 
+                        AuthScreenMode.EMPLOYEE_LOGIN -> {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 2.dp,
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                            modifier = Modifier.size(40.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    Icons.Default.Badge,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
+                                        }
+                                        Column {
+                                            Text(
+                                                if (isBangla) "কর্মচারী লগইন" else "Employee Login",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                if (isBangla) "অ্যাডমিন যেসব অপশনে অ্যাক্সেস দিয়েছেন শুধু সেগুলো দেখা যাবে"
+                                                else "Sign in to access the farm options enabled by your Admin",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = identifier,
+                                        onValueChange = { identifier = it },
+                                        label = {
+                                            Text(if (isBangla) "কর্মচারীর ইমেইল বা মোবাইল" else "Employee Email or Mobile")
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("employee_login_identifier_input")
+                                    )
+
+                                    OutlinedTextField(
+                                        value = password,
+                                        onValueChange = { password = it },
+                                        label = { Text(if (isBangla) "পাসওয়ার্ড" else "Password") },
+                                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                        trailingIcon = {
+                                            IconButton(onClick = { showPassword = !showPassword }) {
+                                                Icon(
+                                                    if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = if (isBangla) "পাসওয়ার্ড দেখুন/লুকান" else "Toggle password"
+                                                )
+                                            }
+                                        },
+                                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("employee_login_password_input")
+                                    )
+
+                                    Button(
+                                        onClick = { onLogin(identifier, password) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .testTag("employee_login_button")
+                                    ) {
+                                        Icon(Icons.Default.Login, contentDescription = null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            if (isBangla) "কর্মচারী হিসেবে লগইন" else "Sign In as Employee",
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = { onLogin("karim@smartfarm.app", "employee123") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("demo_employee_button")
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Badge,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(if (isBangla) "কর্মচারী ডেমো (করিম)" else "Demo Employee (Karim)")
+                                    }
+                                }
+                            }
+                        }
+
                         AuthScreenMode.FORGOT_PASSWORD -> {
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
@@ -788,8 +944,8 @@ fun AuthScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (localErr != null) {
-                        Text(localErr!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                    localErr?.let { err ->
+                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
                     }
                     OutlinedTextField(
                         value = adminEmail,

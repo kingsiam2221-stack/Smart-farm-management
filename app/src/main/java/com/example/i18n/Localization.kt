@@ -226,9 +226,18 @@ object DomainLocalization {
     }
 
     fun userRole(role: String, isBn: Boolean): String {
-        if (!isBn) return role
+        if (!isBn) {
+            return when (role.uppercase()) {
+                "SUPER_ADMIN" -> "Super Admin"
+                "FARMER" -> "Farmer"
+                "EMPLOYEE" -> "Employee"
+                "CUSTOMER" -> "Customer"
+                else -> role
+            }
+        }
         return when (role.uppercase()) {
             "FARMER" -> "খামারি"
+            "EMPLOYEE" -> "কর্মচারী"
             "CUSTOMER" -> "গ্রাহক"
             "SUPER_ADMIN" -> "সুপার অ্যাডমিন"
             else -> role
@@ -246,6 +255,7 @@ data class AppStrings(
     val commerce: String,
     val reports: String,
     val more: String,
+    val farmGuide: String,
     val marketplace: String,
     val cart: String,
     val myOrders: String,
@@ -308,7 +318,8 @@ data class AppStrings(
     val checkout: String,
     val placeOrder: String,
     val orderHistory: String,
-    val superAdminPortal: String
+    val superAdminPortal: String,
+    val permissions: String
 )
 
 object Localization {
@@ -322,6 +333,7 @@ object Localization {
         commerce = "Sales & CRM",
         reports = "Reports",
         more = "More",
+        farmGuide = "Farm Guide",
         marketplace = "Shop",
         cart = "Cart",
         myOrders = "Orders",
@@ -384,7 +396,8 @@ object Localization {
         checkout = "Checkout",
         placeOrder = "Place Order",
         orderHistory = "Order History",
-        superAdminPortal = "Super Admin Console"
+        superAdminPortal = "Super Admin Console",
+        permissions = "Permissions"
     )
 
     val bangla = AppStrings(
@@ -397,6 +410,7 @@ object Localization {
         commerce = "বিক্রয় ও গ্রাহক",
         reports = "রিপোর্ট",
         more = "আরও",
+        farmGuide = "পালন গাইড",
         marketplace = "বাজার",
         cart = "কার্ট",
         myOrders = "অর্ডার",
@@ -459,7 +473,8 @@ object Localization {
         checkout = "চেকআউট",
         placeOrder = "অর্ডার নিশ্চিত করুন",
         orderHistory = "অর্ডার ইতিহাস",
-        superAdminPortal = "সুপার অ্যাডমিন কনসোল"
+        superAdminPortal = "সুপার অ্যাডমিন কনসোল",
+        permissions = "অনুমতি (অ্যাক্সেস)"
     )
 
     fun strings(language: AppLanguage, overrides: Map<String, String> = emptyMap()): AppStrings {

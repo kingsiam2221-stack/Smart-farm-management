@@ -94,8 +94,9 @@ fun FarmAiAdvisorDialog(
     }
 
     LaunchedEffect(messages.size, uiState) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size)
+        val total = listState.layoutInfo.totalItemsCount
+        if (messages.isNotEmpty() && total > 0) {
+            listState.animateScrollToItem((total - 1).coerceAtLeast(0))
         }
     }
 
@@ -225,9 +226,7 @@ fun FarmAiAdvisorDialog(
                         }
                         OutlinedButton(
                             onClick = {
-                                photoPicker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
+                                com.example.ui.components.safeLaunchImagePicker(photoPicker)
                             },
                             modifier = Modifier
                                 .heightIn(min = 48.dp)

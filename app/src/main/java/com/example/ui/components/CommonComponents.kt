@@ -1,11 +1,15 @@
 package com.example.ui.components
 
+import androidx.activity.compose.ManagedActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.FarmEntity
+import com.example.data.local.SubscriptionFeature
 import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyOption
 import com.example.i18n.DomainLocalization
@@ -191,28 +196,31 @@ fun FarmSwitcherBar(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(10.dp))
-                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        item {
-                            ListItem(
-                                headlineContent = { Text(allFarmsLabel, fontWeight = FontWeight.Bold) },
-                                supportingContent = {
-                                    Text(tr("Combined view of all ${farms.size} farms", "সকল ${farms.size}টি খামারের যৌথ দৃশ্য"))
-                                },
-                                leadingContent = { Icon(Icons.Default.Dashboard, contentDescription = null) },
-                                trailingContent = { if (selectedFarmId == null) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                modifier = Modifier.clickable {
-                                    onSelectFarm(null)
-                                    showSheet = false
-                                }
-                            )
-                            HorizontalDivider()
-                        }
-                        val filtered = farms.filter {
-                            it.name.contains(search, ignoreCase = true) ||
-                                it.farmCode.contains(search, ignoreCase = true) ||
-                                it.location.contains(search, ignoreCase = true)
-                        }
-                        items(filtered, key = { it.id }) { farm ->
+                    val filtered = farms.filter {
+                        it.name.contains(search, ignoreCase = true) ||
+                            it.farmCode.contains(search, ignoreCase = true) ||
+                            it.location.contains(search, ignoreCase = true)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(allFarmsLabel, fontWeight = FontWeight.Bold) },
+                            supportingContent = {
+                                Text(tr("Combined view of all ${farms.size} farms", "সকল ${farms.size}টি খামারের যৌথ দৃশ্য"))
+                            },
+                            leadingContent = { Icon(Icons.Default.Dashboard, contentDescription = null) },
+                            trailingContent = { if (selectedFarmId == null) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            modifier = Modifier.clickable {
+                                onSelectFarm(null)
+                                showSheet = false
+                            }
+                        )
+                        HorizontalDivider()
+                        filtered.forEach { farm ->
                             val catLabel = DomainLocalization.farmCategory(farm.category, farm.customCategoryName, isBn)
                             ListItem(
                                 headlineContent = { Text(farm.name, fontWeight = FontWeight.SemiBold) },
@@ -236,6 +244,87 @@ fun FarmSwitcherBar(
 }
 
 @Composable
+fun themeModeLabel(darkModeOverride: Boolean?): String {
+    return when (darkModeOverride) {
+        null -> tr("Default", "ডিফল্ট")
+        false -> tr("White", "হোয়াইট")
+        true -> tr("Dark", "ডার্ক")
+    }
+}
+
+fun themeModeIcon(darkModeOverride: Boolean?): ImageVector {
+    return when (darkModeOverride) {
+        null -> Icons.Default.BrightnessAuto
+        false -> Icons.Default.LightMode
+        true -> Icons.Default.DarkMode
+    }
+}
+
+fun nextThemeModeOverride(current: Boolean?): Boolean? = when (current) {
+    null -> false // Default -> White
+    false -> true // White -> Dark
+    true -> null  // Dark -> Default
+}
+
+@Composable
+fun ThemeModeSelectorRow(
+    darkModeOverride: Boolean?,
+    onSelectDarkMode: (Boolean?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = darkModeOverride == null,
+            onClick = { onSelectDarkMode(null) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.BrightnessAuto,
+                    contentDescription = tr("Default Mode", "ডিফল্ট মোড"),
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            label = { Text(tr("Default", "ডিফল্ট"), maxLines = 1) },
+            modifier = Modifier
+                .weight(1f)
+                .testTag("theme_mode_default")
+        )
+        FilterChip(
+            selected = darkModeOverride == false,
+            onClick = { onSelectDarkMode(false) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.LightMode,
+                    contentDescription = tr("White Mode", "হোয়াইট মোড"),
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            label = { Text(tr("White", "হোয়াইট"), maxLines = 1) },
+            modifier = Modifier
+                .weight(1f)
+                .testTag("theme_mode_white")
+        )
+        FilterChip(
+            selected = darkModeOverride == true,
+            onClick = { onSelectDarkMode(true) },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.DarkMode,
+                    contentDescription = tr("Dark Mode", "ডার্ক মোড"),
+                    modifier = Modifier.size(16.dp)
+                )
+            },
+            label = { Text(tr("Dark", "ডার্ক"), maxLines = 1) },
+            modifier = Modifier
+                .weight(1f)
+                .testTag("theme_mode_dark")
+        )
+    }
+}
+
+@Composable
 fun LanguageCurrencyDialog(
     currentLanguage: AppLanguage,
     currentCurrency: CurrencyOption,
@@ -249,36 +338,30 @@ fun LanguageCurrencyDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr("Language, Currency & Theme", "ভাষা, মুদ্রা ও থিম")) },
         text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 420.dp),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                item {
-                    Text(tr("Language / ভাষা", "ভাষা / Language"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AppLanguage.entries.forEach { lang ->
-                            FilterChip(
-                                selected = currentLanguage == lang,
-                                onClick = { onSelectLanguage(lang) },
-                                label = { Text("${lang.nativeName} (${lang.displayName})") }
-                            )
-                        }
+                Text(tr("Language / ভাষা", "ভাষা / Language"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguage.entries.forEach { lang ->
+                        FilterChip(
+                            selected = currentLanguage == lang,
+                            onClick = { onSelectLanguage(lang) },
+                            label = { Text("${lang.nativeName} (${lang.displayName})") }
+                        )
                     }
                 }
-                item {
-                    Text(tr("Theme Appearance", "থিমের ধরন"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = darkModeOverride == false, onClick = { onSelectDarkMode(false) }, label = { Text(tr("Light", "লাইট")) })
-                        FilterChip(selected = darkModeOverride == true, onClick = { onSelectDarkMode(true) }, label = { Text(tr("Dark", "ডার্ক")) })
-                        FilterChip(selected = darkModeOverride == null, onClick = { onSelectDarkMode(null) }, label = { Text(tr("Auto", "অটো")) })
-                    }
-                }
-                item {
-                    Text(tr("Country & Currency", "দেশ ও মুদ্রা"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                }
-                items(CurrencyOption.entries) { curr ->
+                Text(tr("Theme Mode", "থিম মোড"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                ThemeModeSelectorRow(
+                    darkModeOverride = darkModeOverride,
+                    onSelectDarkMode = onSelectDarkMode
+                )
+                Text(tr("Country & Currency", "দেশ ও মুদ্রা"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                CurrencyOption.entries.forEach { curr ->
                     ListItem(
                         headlineContent = { Text("${curr.symbol} ${curr.code} — ${curr.countryName}", fontWeight = FontWeight.SemiBold) },
                         supportingContent = { Text("${tr("Gateways", "পেমেন্ট মাধ্যম")}: ${curr.gateways.joinToString(", ")}") },
@@ -298,4 +381,145 @@ fun LanguageCurrencyDialog(
 
 fun formatShortDate(millis: Long): String {
     return SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date(millis))
+}
+
+fun safeLaunchImagePicker(
+    launcher: ManagedActivityResultLauncher<PickVisualMediaRequest, android.net.Uri?>
+) {
+    runCatching {
+        launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+}
+
+@Composable
+fun FeaturePlanBadge(
+    isFree: Boolean,
+    hasActiveSub: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = when {
+        isFree -> MaterialTheme.colorScheme.primaryContainer
+        hasActiveSub -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.tertiaryContainer
+    }
+    val contentColor = when {
+        isFree -> MaterialTheme.colorScheme.onPrimaryContainer
+        hasActiveSub -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onTertiaryContainer
+    }
+    val label = when {
+        isFree -> tr("FREE", "ফ্রি")
+        hasActiveSub -> tr("PRO ACTIVE", "সক্রিয়")
+        else -> tr("SUBSCRIPTION", "সাবস্ক্রিপশন")
+    }
+    val icon = when {
+        isFree -> Icons.Default.CheckCircle
+        hasActiveSub -> Icons.Default.Verified
+        else -> Icons.Default.Lock
+    }
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = RoundedCornerShape(50.dp),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+fun SubscriptionRequiredLockCard(
+    feature: SubscriptionFeature,
+    onOpenSubscription: () -> Unit,
+    canSubscribe: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val isBn = isBangla()
+    val title = if (isBn) feature.titleBn else feature.titleEn
+    val desc = if (isBn) feature.descBn else feature.descEn
+    Surface(
+        modifier = modifier.fillMaxWidth().testTag("subscription_lock_${feature.key.lowercase()}"),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f),
+        tonalElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f),
+                modifier = Modifier.size(52.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.WorkspacePremium,
+                        contentDescription = title,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+            FeaturePlanBadge(isFree = false, hasActiveSub = false)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = tr(
+                    "This module requires an active subscription plan. Payment options (bKash, Nagad, Bank Account) are available in Subscriptions.",
+                    "এই অপশনটি চালাতে একটি সক্রিয় সাবস্ক্রিপশন প্ল্যান প্রয়োজন। বিকাশ, নগদ বা ব্যাংক অ্যাকাউন্টের মাধ্যমে সহজেই পেমেন্ট করুন।"
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            if (canSubscribe) {
+                Button(
+                    onClick = onOpenSubscription,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("subscribe_now_button_${feature.key.lowercase()}")
+                ) {
+                    Icon(Icons.Default.CardMembership, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        tr("Subscribe Now / View Plans", "সাবস্ক্রিপশন নিন / প্ল্যান দেখুন"),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                Text(
+                    text = tr(
+                        "Ask your Farm Owner to activate a subscription plan.",
+                        "সাবস্ক্রিপশন চালু করতে খামারের মালিকের সাথে যোগাযোগ করুন।"
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
 }

@@ -2,11 +2,9 @@ package com.example.ui.screens.farmer
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +21,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.data.local.*
@@ -34,10 +33,17 @@ import com.example.i18n.isBangla
 import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FarmSwitcherBar
+import com.example.ui.components.FeaturePlanBadge
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.SubscriptionRequiredLockCard
 import com.example.ui.components.formatShortDate
+import com.example.ui.components.safeLaunchImagePicker
 import com.example.ui.state.FarmerDashboardState
 import com.example.util.ReportExportHelper
+
+enum class CommerceTab {
+    SALES, CUSTOMERS, ORDERS
+}
 
 @Composable
 fun CommerceScreen(
@@ -51,27 +57,76 @@ fun CommerceScreen(
     onSaveCustomer: (CustomerEntity) -> Unit,
     onDeleteCustomer: (CustomerEntity) -> Unit,
     onUpdateOrderStatus: (OrderEntity, OrderStatus) -> Unit,
-    onMessage: (String) -> Unit
+    onMessage: (String) -> Unit,
+    onOpenSubscription: () -> Unit = {}
 ) {
-    var tabIndex by remember { mutableIntStateOf(0) }
+    val visibleTabs = remember(state.accessPolicy) {
+        buildList {
+            if (state.accessPolicy.has(AppPermission.SALES_VIEW)) add(CommerceTab.SALES)
+            if (state.accessPolicy.has(AppPermission.CUSTOMERS_VIEW)) add(CommerceTab.CUSTOMERS)
+            if (state.accessPolicy.has(AppPermission.ORDERS_VIEW)) add(CommerceTab.ORDERS)
+        }
+    }
+
+    if (visibleTabs.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            EmptyStateCard(
+                icon = Icons.Default.Lock,
+                title = tr("Sales & CRM Access Restricted", "বিক্রয় ও গ্রাহক অপশনের অনুমতি নেই"),
+                subtitle = tr(
+                    "Ask your Farm Admin to grant Sales, Customers, or Online Orders access.",
+                    "বিক্রয়, গ্রাহক বা অর্ডার অপশন দেখতে অ্যাডমিনের কাছ থেকে অনুমতি নিন।"
+                )
+            )
+        }
+        return
+    }
+
+    if (!state.subscriptionPolicy.canAccess(SubscriptionFeature.BUY_SELL_SALES_CRM)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            SubscriptionRequiredLockCard(
+                feature = SubscriptionFeature.BUY_SELL_SALES_CRM,
+                onOpenSubscription = onOpenSubscription,
+                canSubscribe = state.accessPolicy.has(AppPermission.SUBSCRIPTION_MANAGE)
+            )
+        }
+        return
+    }
+
+    var selectedTab by remember(visibleTabs) { mutableStateOf(visibleTabs.first()) }
+    val selectedIdx = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)
     val pendingOrders = state.incomingOrders.count { it.status == OrderStatus.PENDING.name }
     val ordersTitle = tr("Orders", "অর্ডার")
-    val tabs = listOf(
-        tr("Sales", "বিক্রয়"),
-        tr("Customers", "গ্রাহক"),
-        if (pendingOrders > 0) "$ordersTitle ($pendingOrders)" else ordersTitle
-    )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = tabIndex) {
-            tabs.forEachIndexed { idx, title ->
-                Tab(selected = tabIndex == idx, onClick = { tabIndex = idx }, text = { Text(title) })
+        TabRow(selectedTabIndex = selectedIdx) {
+            visibleTabs.forEach { tab ->
+                val title = when (tab) {
+                    CommerceTab.SALES -> tr("Sales", "বিক্রয়")
+                    CommerceTab.CUSTOMERS -> tr("Customers", "গ্রাহক")
+                    CommerceTab.ORDERS -> if (pendingOrders > 0) "$ordersTitle ($pendingOrders)" else ordersTitle
+                }
+                Tab(
+                    selected = selectedTab == tab,
+                    onClick = { selectedTab = tab },
+                    text = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                )
             }
         }
-        when (tabIndex) {
-            0 -> SalesTab(state, strings, currency, onSelectFarm, onCreateSale, onSettleDue, onDeleteSale, onMessage)
-            1 -> CustomersTab(state, strings, currency, onSaveCustomer, onDeleteCustomer)
-            2 -> IncomingOrdersTab(state, currency, onUpdateOrderStatus)
+        when (selectedTab) {
+            CommerceTab.SALES -> SalesTab(state, strings, currency, onSelectFarm, onCreateSale, onSettleDue, onDeleteSale, onMessage)
+            CommerceTab.CUSTOMERS -> CustomersTab(state, strings, currency, onSaveCustomer, onDeleteCustomer)
+            CommerceTab.ORDERS -> IncomingOrdersTab(state, currency, onUpdateOrderStatus)
         }
     }
 }
@@ -89,6 +144,8 @@ private fun SalesTab(
 ) {
     val isBn = isBangla()
     val context = LocalContext.current
+    val canCreateCollect = state.accessPolicy.has(AppPermission.SALES_CREATE_COLLECT)
+    val canDelete = state.accessPolicy.has(AppPermission.SALES_DELETE)
     var showCreate by remember { mutableStateOf(false) }
     var invoiceSale by remember { mutableStateOf<SaleEntity?>(null) }
     var settleTarget by remember { mutableStateOf<SaleEntity?>(null) }
@@ -104,11 +161,13 @@ private fun SalesTab(
 
     Scaffold(
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showCreate = true },
-                icon = { Icon(Icons.Default.PointOfSale, contentDescription = strings.newSale) },
-                text = { Text(strings.newSale) }
-            )
+            if (canCreateCollect) {
+                ExtendedFloatingActionButton(
+                    onClick = { showCreate = true },
+                    icon = { Icon(Icons.Default.PointOfSale, contentDescription = strings.newSale) },
+                    text = { Text(strings.newSale) }
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -116,7 +175,23 @@ private fun SalesTab(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item {
+            item(key = "sales_header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        tr("Sales & Invoices", "বিক্রয় ও ইনভয়েস"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    FeaturePlanBadge(
+                        isFree = state.subscriptionPolicy.isFree(SubscriptionFeature.BUY_SELL_SALES_CRM),
+                        hasActiveSub = state.subscriptionPolicy.hasActiveSubscription
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
                 FarmSwitcherBar(state.farms, state.selectedFarmId, strings.allFarms, onSelectFarm)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -139,7 +214,7 @@ private fun SalesTab(
             }
 
             if (filteredSales.isEmpty()) {
-                item {
+                item(key = "sales_empty") {
                     EmptyStateCard(
                         icon = Icons.Default.PointOfSale,
                         title = tr("No Sales Yet", "এখনও কোনো বিক্রয় নেই"),
@@ -147,12 +222,12 @@ private fun SalesTab(
                             "Sell livestock, poultry, eggs, milk, meat, or farm produce.",
                             "পশু, মুরগি, ডিম, দুধ, মাংস বা খামারের পণ্য বিক্রি করুন।"
                         ),
-                        actionLabel = strings.newSale,
-                        onAction = { showCreate = true }
+                        actionLabel = if (canCreateCollect) strings.newSale else null,
+                        onAction = if (canCreateCollect) ({ showCreate = true }) else null
                     )
                 }
             } else {
-                items(filteredSales, key = { it.id }) { sale ->
+                items(filteredSales, key = { "sale_${it.id}" }) { sale ->
                     val farmName = farmsMap[sale.farmId]?.name ?: tr("Farm", "খামার")
                     val payMethodDisp = DomainLocalization.paymentMethod(sale.paymentMethod, isBn)
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
@@ -174,13 +249,15 @@ private fun SalesTab(
                                     Spacer(Modifier.width(4.dp))
                                     Text(tr("Invoice / PDF", "ইনভয়েস / পিডিএফ"))
                                 }
-                                if (sale.dueAmount > 0.0) {
+                                if (sale.dueAmount > 0.0 && canCreateCollect) {
                                     OutlinedButton(onClick = { settleTarget = sale }, modifier = Modifier.weight(1f)) {
                                         Text(tr("Collect Due", "বকেয়া আদায়"))
                                     }
                                 }
-                                IconButton(onClick = { onDeleteSale(sale) }) {
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                if (canDelete) {
+                                    IconButton(onClick = { onDeleteSale(sale) }) {
+                                        Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }
@@ -208,14 +285,16 @@ private fun SalesTab(
         )
     }
 
-    if (invoiceSale != null) {
-        val sale = invoiceSale!!
+    invoiceSale?.let { sale ->
         val farmName = farmsMap[sale.farmId]?.name ?: tr("Smart Farm", "স্মার্ট ফার্ম")
         AlertDialog(
             onDismissRequest = { invoiceSale = null },
             title = { Text("${tr("Invoice", "ইনভয়েস")} ${sale.invoiceNumber}") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text("${tr("Farm", "খামার")}: $farmName", fontWeight = FontWeight.Bold)
                     Text("${tr("Customer", "গ্রাহক")}: ${sale.customerName} (${sale.customerPhone})")
                     Text("${tr("Date", "তারিখ")}: ${formatShortDate(sale.saleDate)}")
@@ -231,23 +310,24 @@ private fun SalesTab(
             },
             confirmButton = {
                 val exportFailMsg = tr("Unable to export PDF", "পিডিএফ তৈরি করা যায়নি")
-                Button(onClick = {
-                    ReportExportHelper.exportInvoicePdf(context, sale, farmName, currency)
-                        .onFailure { onMessage("$exportFailMsg: ${it.message}") }
-                    invoiceSale = null
-                }) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(tr("Download / Print PDF", "পিডিএফ ডাউনলোড"))
+                if (canCreateCollect) {
+                    Button(onClick = {
+                        ReportExportHelper.exportInvoicePdf(context, sale, farmName, currency)
+                            .onFailure { onMessage("$exportFailMsg: ${it.message}") }
+                        invoiceSale = null
+                    }) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(tr("Download / Print PDF", "পিডিএফ ডাউনলোড"))
+                    }
                 }
             },
             dismissButton = { TextButton(onClick = { invoiceSale = null }) { Text(tr("Close", "বন্ধ করুন")) } }
         )
     }
 
-    if (settleTarget != null) {
-        val s = settleTarget!!
-        var amtText by remember { mutableStateOf(CurrencyFormatter.convertFromBase(s.dueAmount, currency).toInt().toString()) }
+    settleTarget?.let { s ->
+        var amtText by remember(s.id) { mutableStateOf(CurrencyFormatter.convertFromBase(s.dueAmount, currency).toInt().toString()) }
         AlertDialog(
             onDismissRequest = { settleTarget = null },
             title = { Text("${tr("Collect Due Payment", "বকেয়া আদায়")} (${s.invoiceNumber})") },
@@ -271,6 +351,7 @@ private fun SalesTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CreateSaleDialog(
     state: FarmerDashboardState,
@@ -308,13 +389,21 @@ private fun CreateSaleDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(state.farms) { f -> FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) }) }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    state.farms.forEach { f ->
+                        FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) })
+                    }
                 }
                 if (state.customers.isNotEmpty()) {
                     Text(tr("Customer (optional)", "গ্রাহক (ঐচ্ছিক)"), style = MaterialTheme.typography.labelLarge)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(state.customers) { c ->
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        state.customers.forEach { c ->
                             FilterChip(
                                 selected = selectedCustomer?.id == c.id,
                                 onClick = {
@@ -332,10 +421,14 @@ private fun CreateSaleDialog(
                 OutlinedTextField(value = custName, onValueChange = { custName = it }, label = { Text(tr("Customer Name", "গ্রাহকের নাম")) }, singleLine = true)
                 OutlinedTextField(value = custPhone, onValueChange = { custPhone = it }, label = { Text(tr("Customer Phone", "গ্রাহকের মোবাইল")) }, singleLine = true)
 
-                if (state.inventory.isNotEmpty()) {
+                val farmInv = state.inventory.filter { it.farmId == farmId }
+                if (farmInv.isNotEmpty()) {
                     Text(tr("Link Inventory Item (auto-reduces stock)", "মজুদ পণ্য যুক্ত করুন (স্টক স্বয়ংক্রিয় কমবে)"), style = MaterialTheme.typography.labelSmall)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(state.inventory.filter { it.farmId == farmId }) { item ->
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farmInv.forEach { item ->
                             FilterChip(
                                 selected = selectedInv?.id == item.id,
                                 onClick = {
@@ -353,10 +446,14 @@ private fun CreateSaleDialog(
                         }
                     }
                 }
-                if (state.animals.isNotEmpty()) {
+                val farmAnimals = state.animals.filter { it.farmId == farmId && it.quantity > 0 }
+                if (farmAnimals.isNotEmpty()) {
                     Text(tr("Or Link Livestock Batch (auto-reduces count)", "অথবা পশুপাখির ব্যাচ যুক্ত করুন (সংখ্যা কমবে)"), style = MaterialTheme.typography.labelSmall)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(state.animals.filter { it.farmId == farmId && it.quantity > 0 }) { anim ->
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farmAnimals.forEach { anim ->
                             FilterChip(
                                 selected = selectedAnim?.id == anim.id,
                                 onClick = {
@@ -373,8 +470,12 @@ private fun CreateSaleDialog(
                     }
                 }
 
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(cats) { c ->
+                Text(tr("Product Category", "পণ্যের ধরন"), style = MaterialTheme.typography.labelLarge)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    cats.forEach { c ->
                         FilterChip(
                             selected = prodCat == c,
                             onClick = { prodCat = c },
@@ -391,8 +492,12 @@ private fun CreateSaleDialog(
                     OutlinedTextField(value = discountText, onValueChange = { discountText = it }, label = { Text(tr("Discount", "ছাড়")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
                     OutlinedTextField(value = paidText, onValueChange = { paidText = it }, label = { Text(tr("Paid (default full)", "জমা (খালি থাকলে পূর্ণ)")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
                 }
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(listOf("Cash", "Bank Transfer") + currency.gateways) { m ->
+                Text(tr("Payment Method", "পেমেন্ট মাধ্যম"), style = MaterialTheme.typography.labelLarge)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    (listOf("Cash", "Bank Transfer") + currency.gateways).distinct().forEach { m ->
                         FilterChip(
                             selected = payMethod == m,
                             onClick = { payMethod = m },
@@ -427,16 +532,19 @@ private fun CustomersTab(
     onSaveCustomer: (CustomerEntity) -> Unit,
     onDeleteCustomer: (CustomerEntity) -> Unit
 ) {
+    val canManage = state.accessPolicy.has(AppPermission.CUSTOMERS_MANAGE)
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CustomerEntity?>(null) }
 
     Scaffold(
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAdd = true },
-                icon = { Icon(Icons.Default.PersonAdd, contentDescription = strings.addCustomer) },
-                text = { Text(strings.addCustomer) }
-            )
+            if (canManage) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAdd = true },
+                    icon = { Icon(Icons.Default.PersonAdd, contentDescription = strings.addCustomer) },
+                    text = { Text(strings.addCustomer) }
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -444,8 +552,25 @@ private fun CustomersTab(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item(key = "cust_header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        tr("Customers & Accounts", "গ্রাহক তালিকা ও হিসাব"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    FeaturePlanBadge(
+                        isFree = state.subscriptionPolicy.isFree(SubscriptionFeature.BUY_SELL_SALES_CRM),
+                        hasActiveSub = state.subscriptionPolicy.hasActiveSubscription
+                    )
+                }
+            }
             if (state.customers.isEmpty()) {
-                item {
+                item(key = "cust_empty") {
                     EmptyStateCard(
                         icon = Icons.Default.People,
                         title = tr("No Customers", "কোনো গ্রাহক নেই"),
@@ -453,12 +578,12 @@ private fun CustomersTab(
                             "Track customer profiles, purchase history, payments, and due balances.",
                             "গ্রাহকের প্রোফাইল, ক্রয়ের ইতিহাস, পরিশোধ ও বকেয়ার হিসাব রাখুন।"
                         ),
-                        actionLabel = strings.addCustomer,
-                        onAction = { showAdd = true }
+                        actionLabel = if (canManage) strings.addCustomer else null,
+                        onAction = if (canManage) ({ showAdd = true }) else null
                     )
                 }
             } else {
-                items(state.customers, key = { it.id }) { cust ->
+                items(state.customers, key = { "cust_${it.id}" }) { cust ->
                     val custSales = state.sales.filter { it.customerId == cust.id || it.customerPhone == cust.mobile }
                     val totalBuy = custSales.sumOf { it.totalAmount }
                     val totalPaid = custSales.sumOf { it.paidAmount }
@@ -482,9 +607,11 @@ private fun CustomersTab(
                                         Text("${cust.mobile} • ${cust.email.ifBlank { "-" }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                Row {
-                                    IconButton(onClick = { editing = cust }) { Icon(Icons.Default.Edit, contentDescription = strings.edit) }
-                                    IconButton(onClick = { onDeleteCustomer(cust) }) { Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error) }
+                                if (canManage) {
+                                    Row {
+                                        IconButton(onClick = { editing = cust }) { Icon(Icons.Default.Edit, contentDescription = strings.edit) }
+                                        IconButton(onClick = { onDeleteCustomer(cust) }) { Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error) }
+                                    }
                                 }
                             }
                             if (cust.address.isNotBlank()) Text("${tr("Address", "ঠিকানা")}: ${cust.address}", style = MaterialTheme.typography.bodyMedium)
@@ -502,21 +629,25 @@ private fun CustomersTab(
     }
 
     if (showAdd || editing != null) {
-        var name by remember { mutableStateOf(editing?.name ?: "") }
-        var mobile by remember { mutableStateOf(editing?.mobile ?: "") }
-        var email by remember { mutableStateOf(editing?.email ?: "") }
-        var address by remember { mutableStateOf(editing?.address ?: "") }
-        var photoUri by remember { mutableStateOf(editing?.photoUri) }
+        val currentEdit = editing
+        var name by remember(currentEdit?.id) { mutableStateOf(currentEdit?.name ?: "") }
+        var mobile by remember(currentEdit?.id) { mutableStateOf(currentEdit?.mobile ?: "") }
+        var email by remember(currentEdit?.id) { mutableStateOf(currentEdit?.email ?: "") }
+        var address by remember(currentEdit?.id) { mutableStateOf(currentEdit?.address ?: "") }
+        var photoUri by remember(currentEdit?.id) { mutableStateOf(currentEdit?.photoUri) }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
             if (uri != null) photoUri = uri.toString()
         }
 
         AlertDialog(
             onDismissRequest = { showAdd = false; editing = null },
-            title = { Text(if (editing == null) tr("Add Customer", "গ্রাহক যোগ করুন") else tr("Edit Customer", "গ্রাহক সম্পাদনা")) },
+            title = { Text(if (currentEdit == null) tr("Add Customer", "গ্রাহক যোগ করুন") else tr("Edit Customer", "গ্রাহক সম্পাদনা")) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { safeLaunchImagePicker(picker) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(if (photoUri == null) tr("Add Photo", "ছবি যোগ করুন") else tr("Photo Selected", "ছবি নির্বাচিত হয়েছে"))
@@ -530,7 +661,7 @@ private fun CustomersTab(
             confirmButton = {
                 Button(enabled = name.isNotBlank() && mobile.isNotBlank(), onClick = {
                     onSaveCustomer(
-                        (editing ?: CustomerEntity(ownerUserId = 0L, customerCode = "", name = name, mobile = mobile)).copy(
+                        (currentEdit ?: CustomerEntity(ownerUserId = 0L, customerCode = "", name = name, mobile = mobile)).copy(
                             name = name.trim(),
                             mobile = mobile.trim(),
                             email = email.trim(),
@@ -547,6 +678,7 @@ private fun CustomersTab(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun IncomingOrdersTab(
     state: FarmerDashboardState,
@@ -554,13 +686,31 @@ private fun IncomingOrdersTab(
     onUpdateOrderStatus: (OrderEntity, OrderStatus) -> Unit
 ) {
     val isBn = isBangla()
+    val canManage = state.accessPolicy.has(AppPermission.ORDERS_MANAGE)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        item(key = "orders_header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    tr("Incoming Online Orders", "অনলাইন অর্ডারসমূহ"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                FeaturePlanBadge(
+                    isFree = state.subscriptionPolicy.isFree(SubscriptionFeature.BUY_SELL_SALES_CRM),
+                    hasActiveSub = state.subscriptionPolicy.hasActiveSubscription
+                )
+            }
+        }
         if (state.incomingOrders.isEmpty()) {
-            item {
+            item(key = "orders_empty") {
                 EmptyStateCard(
                     icon = Icons.Default.LocalShipping,
                     title = tr("No Online Orders", "কোনো অনলাইন অর্ডার নেই"),
@@ -571,12 +721,12 @@ private fun IncomingOrdersTab(
                 )
             }
         } else {
-            items(state.incomingOrders, key = { it.id }) { order ->
+            items(state.incomingOrders, key = { "order_${it.id}" }) { order ->
                 val currentStatus = OrderStatus.entries.firstOrNull { it.name == order.status } ?: OrderStatus.PENDING
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("${order.orderNumber} • ${order.farmName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("${order.orderNumber} • ${order.farmName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                             AssistChip(onClick = {}, label = { Text(DomainLocalization.orderStatus(currentStatus, isBn), fontWeight = FontWeight.Bold) })
                         }
                         if (order.cancellationRequested && currentStatus != OrderStatus.CANCELLED) {
@@ -586,13 +736,18 @@ private fun IncomingOrdersTab(
                         Text("${tr("Customer", "গ্রাহক")}: ${order.customerName} (${order.customerPhone}) • ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)}) • ${formatShortDate(order.createdAt)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
 
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(OrderStatus.entries) { st ->
-                                FilterChip(
-                                    selected = currentStatus == st,
-                                    onClick = { onUpdateOrderStatus(order, st) },
-                                    label = { Text(DomainLocalization.orderStatus(st, isBn)) }
-                                )
+                        if (canManage) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                OrderStatus.entries.forEach { st ->
+                                    FilterChip(
+                                        selected = currentStatus == st,
+                                        onClick = { onUpdateOrderStatus(order, st) },
+                                        label = { Text(DomainLocalization.orderStatus(st, isBn)) }
+                                    )
+                                }
                             }
                         }
                     }

@@ -5,7 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class UserRole { FARMER, CUSTOMER, SUPER_ADMIN }
+enum class UserRole { FARMER, CUSTOMER, EMPLOYEE, SUPER_ADMIN }
 enum class AccountStatus { ACTIVE, INACTIVE, SUSPENDED }
 
 enum class FarmCategory(val label: String) {
@@ -69,6 +69,7 @@ data class UserEntity(
     val profileImageUri: String? = null,
     val preferredLanguage: String = "en",
     val preferredCurrency: String = "BDT",
+    val employerOwnerId: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -328,7 +329,9 @@ data class EmployeeEntity(
     val canManageSales: Boolean = false,
     val canManageLivestock: Boolean = true,
     val lastAttendanceStatus: String = AttendanceStatus.PRESENT.name,
-    val lastAttendanceDate: Long = System.currentTimeMillis()
+    val lastAttendanceDate: Long = System.currentTimeMillis(),
+    val email: String = "",
+    val linkedUserId: Long? = null
 )
 
 @Entity(
@@ -426,5 +429,56 @@ data class SystemSettingsEntity(
     val announcementBanner: String = "Welcome to Smart Farm Management! Keep livestock vaccinations & low-stock alerts updated.",
     val maintenanceMode: Boolean = false,
     val defaultCurrencyCode: String = "BDT",
-    val allowManualPayments: Boolean = true
+    val allowManualPayments: Boolean = true,
+    val subscriptionLockedFeaturesCsv: String = SubscriptionFeature.DEFAULT_LOCKED_CSV,
+    val bkashEnabled: Boolean = true,
+    val bkashNumber: String = "01700-000000",
+    val bkashAccountType: String = "Merchant",
+    val nagadEnabled: Boolean = true,
+    val nagadNumber: String = "01800-000000",
+    val nagadAccountType: String = "Personal",
+    val bankEnabled: Boolean = true,
+    val bankName: String = "Dutch-Bangla Bank (DBBL)",
+    val bankAccountName: String = "Smart Farm Management",
+    val bankAccountNumber: String = "123-456-7890123",
+    val bankBranch: String = "Dhaka Main Branch",
+    val paymentInstructions: String = "Send plan fee to the Developer bKash, Nagad, or Bank Account shown and enter your TrxID / Reference.",
+    val requireAdminApprovalForAll: Boolean = false
+)
+
+@Entity(
+    tableName = "employee_permissions",
+    foreignKeys = [
+        ForeignKey(entity = EmployeeEntity::class, parentColumns = ["id"], childColumns = ["employeeId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [
+        Index("ownerUserId"),
+        Index(value = ["employeeId", "permissionKey"], unique = true)
+    ]
+)
+data class EmployeePermissionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val employeeId: Long,
+    val ownerUserId: Long,
+    val permissionKey: String,
+    val granted: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "custom_permission_options",
+    indices = [
+        Index("ownerUserId"),
+        Index(value = ["permissionKey"], unique = true)
+    ]
+)
+data class CustomPermissionOptionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val permissionKey: String,
+    val titleEn: String,
+    val titleBn: String = "",
+    val descriptionEn: String = "",
+    val descriptionBn: String = "",
+    val createdAt: Long = System.currentTimeMillis()
 )

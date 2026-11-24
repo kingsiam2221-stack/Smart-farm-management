@@ -2,7 +2,6 @@ package com.example.ui.screens.farmer
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,17 +50,26 @@ fun FarmerDashboardScreen(
     currency: CurrencyOption,
     unreadNotificationsCount: Int,
     announcementBanner: String,
+    darkModeOverride: Boolean? = null,
     onSelectFarm: (Long?) -> Unit,
     onOpenFarms: () -> Unit,
+    onOpenAddFarm: () -> Unit = onOpenFarms,
     onOpenLivestock: () -> Unit,
     onOpenEggs: () -> Unit,
     onOpenSales: () -> Unit,
+    onOpenInventory: () -> Unit = onOpenFarms,
+    onOpenPermissions: () -> Unit = {},
+    onOpenGuide: () -> Unit = {},
     onOpenNotifications: () -> Unit,
     onOpenSubscription: () -> Unit,
     onOpenAiAdvisor: () -> Unit = {},
-    onToggleLanguage: () -> Unit = {}
+    onToggleLanguage: () -> Unit = {},
+    onSelectDarkMode: (Boolean?) -> Unit = {}
 ) {
     val isBn = isBangla()
+    val policy = state.accessPolicy
+    val subPolicy = state.subscriptionPolicy
+    val canSubscribe = policy.has(AppPermission.SUBSCRIPTION_MANAGE)
     val activeFarmId = state.selectedFarmId
     val filteredAnimals = remember(state.animals, activeFarmId) {
         if (activeFarmId == null) state.animals else state.animals.filter { it.farmId == activeFarmId }
@@ -89,7 +98,7 @@ fun FarmerDashboardScreen(
     val totalExpenses = filteredExpenses.sumOf { it.amount }
     val netProfit = totalSales - totalExpenses
 
-    val activeSub = state.subscriptions.firstOrNull { it.status == "ACTIVE" }
+    val activeSub = state.subscriptions.firstOrNull { it.status == "ACTIVE" && it.expiryDate > System.currentTimeMillis() }
     val lowStockCount = state.inventory.count { it.quantity <= it.lowStockThreshold }
     val pendingOrdersCount = state.incomingOrders.count { it.status == OrderStatus.PENDING.name }
 
@@ -142,18 +151,45 @@ fun FarmerDashboardScreen(
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
+                            val canOpenSub = policy.has(AppPermission.SUBSCRIPTION_MANAGE)
                             Text(
                                 if (activeSub != null) "${activeSub.planName} • ${strings.active}"
-                                else tr("Subscription inactive • Tap to activate", "সাবস্ক্রিপশন নিষ্ক্রিয় • সক্রিয় করতে ট্যাপ করুন"),
+                                else if (canOpenSub) tr("Subscription inactive • Tap to activate", "সাবস্ক্রিপশন নিষ্ক্রিয় • সক্রিয় করতে ট্যাপ করুন")
+                                else tr("Subscription inactive", "সাবস্ক্রিপশন নিষ্ক্রিয়"),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFB9F6CA),
-                                modifier = Modifier.clickable { onOpenSubscription() }
+                                modifier = if (canOpenSub) Modifier.clickable { onOpenSubscription() } else Modifier
                             )
                         }
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Surface(
+                                onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
+                                shape = RoundedCornerShape(50.dp),
+                                color = Color.White.copy(alpha = 0.22f),
+                                modifier = Modifier.testTag("dashboard_theme_toggle")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        themeModeIcon(darkModeOverride),
+                                        contentDescription = strings.themeMode,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        themeModeLabel(darkModeOverride),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                             Surface(
                                 onClick = onToggleLanguage,
                                 shape = RoundedCornerShape(50.dp),
@@ -168,18 +204,20 @@ fun FarmerDashboardScreen(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
-                            BadgedBox(
-                                badge = {
-                                    if (unreadNotificationsCount > 0) {
-                                        Badge { Text("$unreadNotificationsCount") }
+                            if (policy.has(AppPermission.ALERTS_CAUTION_VIEW)) {
+                                BadgedBox(
+                                    badge = {
+                                        if (unreadNotificationsCount > 0) {
+                                            Badge { Text("$unreadNotificationsCount") }
+                                        }
                                     }
-                                }
-                            ) {
-                                IconButton(
-                                    onClick = onOpenNotifications,
-                                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.2f))
                                 ) {
-                                    Icon(Icons.Default.Notifications, contentDescription = strings.notifications, tint = Color.White)
+                                    IconButton(
+                                        onClick = onOpenNotifications,
+                                        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                                    ) {
+                                        Icon(Icons.Default.Notifications, contentDescription = strings.notifications, tint = Color.White)
+                                    }
                                 }
                             }
                         }
@@ -195,23 +233,41 @@ fun FarmerDashboardScreen(
         }
 
         // Farm Switcher (Supports 1..100+ farms)
-        item {
-            FarmSwitcherBar(
-                farms = state.farms,
-                selectedFarmId = state.selectedFarmId,
-                allFarmsLabel = strings.allFarms,
-                onSelectFarm = onSelectFarm
-            )
+        if (policy.has(AppPermission.FARMS_VIEW)) {
+            item {
+                FarmSwitcherBar(
+                    farms = state.farms,
+                    selectedFarmId = state.selectedFarmId,
+                    allFarmsLabel = strings.allFarms,
+                    onSelectFarm = onSelectFarm
+                )
+            }
+        }
+
+        // Empty-Access Employee Notice
+        if (!policy.isAdminOwner && policy.grantedKeys.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Default.LockPerson,
+                    title = tr("No Options Enabled Yet", "এখনও কোনো অপশনের অনুমতি নেই"),
+                    subtitle = tr(
+                        "Ask your Farm Admin to grant you access to farms, livestock, eggs, sales, or custom modules from the Permissions screen.",
+                        "খামারের অ্যাডমিনকে বলুন অনুমতি পাতা থেকে আপনার জন্য খামার, পশুপাখি, ডিম বা বিক্রয়ের অ্যাক্সেস চালু করে দিতে।"
+                    )
+                )
+            }
         }
 
         // Alerts Strip (Pending Orders / Low Inventory)
-        if (pendingOrdersCount > 0 || lowStockCount > 0) {
+        val showPendingChip = pendingOrdersCount > 0 && policy.has(AppPermission.ORDERS_VIEW)
+        val showLowStockChip = lowStockCount > 0 && policy.has(AppPermission.INVENTORY_VIEW)
+        if (showPendingChip || showLowStockChip) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (pendingOrdersCount > 0) {
+                    if (showPendingChip) {
                         AssistChip(
                             onClick = onOpenSales,
                             label = { Text(tr("$pendingOrdersCount New Orders", "$pendingOrdersCount টি নতুন অর্ডার")) },
@@ -219,9 +275,9 @@ fun FarmerDashboardScreen(
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    if (lowStockCount > 0) {
+                    if (showLowStockChip) {
                         AssistChip(
-                            onClick = onOpenFarms,
+                            onClick = onOpenInventory,
                             label = { Text(tr("$lowStockCount Low Stock Alerts", "$lowStockCount টি কম স্টক সতর্কতা")) },
                             leadingIcon = { Icon(Icons.Default.WarningAmber, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary) },
                             modifier = Modifier.weight(1f)
@@ -231,169 +287,321 @@ fun FarmerDashboardScreen(
             }
         }
 
-        // Quick Actions Row
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                item {
-                    QuickActionPill(Icons.Default.AutoAwesome, tr("AI Advisor", "এআই উপদেষ্টা"), onOpenAiAdvisor, testTag = "open_ai_advisor_pill")
-                }
-                item {
-                    QuickActionPill(Icons.Default.AddBusiness, strings.addFarm, onOpenFarms)
-                }
-                item {
-                    QuickActionPill(Icons.Default.Pets, strings.addAnimal, onOpenLivestock)
-                }
-                item {
-                    QuickActionPill(Icons.Default.Egg, strings.recordEggs, onOpenEggs)
-                }
-                item {
-                    QuickActionPill(Icons.Default.PointOfSale, strings.newSale, onOpenSales)
+        // Quick Actions Row (only permitted actions)
+        val showAnyQuickAction = policy.canManagePermissions() ||
+            policy.has(AppPermission.AI_ADVISOR) ||
+            policy.has(AppPermission.FARM_GUIDE_VIEW) ||
+            policy.has(AppPermission.FARMS_CREATE_EDIT) ||
+            policy.has(AppPermission.LIVESTOCK_CREATE_EDIT) ||
+            policy.has(AppPermission.EGGS_RECORD) ||
+            policy.has(AppPermission.SALES_CREATE_COLLECT)
+        if (showAnyQuickAction) {
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (policy.canManagePermissions()) {
+                        item {
+                            QuickActionPill(Icons.Default.AdminPanelSettings, strings.permissions, onOpenPermissions, testTag = "dashboard_permissions_pill")
+                        }
+                    }
+                    if (policy.has(AppPermission.AI_ADVISOR)) {
+                        item {
+                            QuickActionPill(Icons.Default.AutoAwesome, tr("AI Advisor", "এআই উপদেষ্টা"), onOpenAiAdvisor, testTag = "open_ai_advisor_pill")
+                        }
+                    }
+                    if (policy.has(AppPermission.FARM_GUIDE_VIEW)) {
+                        item {
+                            QuickActionPill(Icons.AutoMirrored.Filled.MenuBook, strings.farmGuide, onOpenGuide, testTag = "open_farm_guide_pill")
+                        }
+                    }
+                    if (policy.has(AppPermission.FARMS_CREATE_EDIT)) {
+                        item {
+                            QuickActionPill(Icons.Default.AddBusiness, strings.addFarm, onOpenAddFarm, testTag = "dashboard_add_farm_pill")
+                        }
+                    }
+                    if (policy.has(AppPermission.LIVESTOCK_CREATE_EDIT)) {
+                        item {
+                            QuickActionPill(Icons.Default.Pets, strings.addAnimal, onOpenLivestock)
+                        }
+                    }
+                    if (policy.has(AppPermission.EGGS_RECORD)) {
+                        item {
+                            QuickActionPill(Icons.Default.Egg, strings.recordEggs, onOpenEggs)
+                        }
+                    }
+                    if (policy.has(AppPermission.SALES_CREATE_COLLECT)) {
+                        item {
+                            QuickActionPill(Icons.Default.PointOfSale, strings.newSale, onOpenSales)
+                        }
+                    }
                 }
             }
         }
 
         // Gemini AI Farm Advisor Highlight Card
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                tonalElevation = 2.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("open_ai_advisor_button")
-                    .clickable { onOpenAiAdvisor() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+        if (policy.has(AppPermission.AI_ADVISOR)) {
+            item {
+                val aiUnlocked = subPolicy.canAccess(SubscriptionFeature.DASHBOARD_CHARTS_AI)
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_ai_advisor_button")
+                        .clickable { if (aiUnlocked) onOpenAiAdvisor() else if (canSubscribe) onOpenSubscription() }
                 ) {
                     Row(
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(44.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = tr("AI Farm Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
-                                    tint = MaterialTheme.colorScheme.onPrimary
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.AutoAwesome,
+                                        contentDescription = tr("AI Farm Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                FeaturePlanBadge(
+                                    isFree = subPolicy.isFree(SubscriptionFeature.DASHBOARD_CHARTS_AI),
+                                    hasActiveSub = subPolicy.hasActiveSubscription
+                                )
+                                Text(
+                                    tr("Smart Farm AI Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    tr(
+                                        "Ask questions, run a live Farm Audit, or inspect livestock/feed photos",
+                                        "প্রশ্ন করুন, লাইভ ফার্ম অডিট চালান অথবা পশুপাখি ও খাদ্যের ছবি পরীক্ষা করুন"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                                 )
                             }
                         }
-                        Column {
-                            Text(
-                                tr("Smart Farm AI Advisor", "স্মার্ট ফার্ম এআই উপদেষ্টা"),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                tr(
-                                    "Ask questions, run a live Farm Audit, or inspect livestock/feed photos",
-                                    "প্রশ্ন করুন, লাইভ ফার্ম অডিট চালান অথবা পশুপাখি ও খাদ্যের ছবি পরীক্ষা করুন"
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                            )
+                        FilledTonalButton(onClick = { if (aiUnlocked) onOpenAiAdvisor() else if (canSubscribe) onOpenSubscription() }) {
+                            Text(if (aiUnlocked) tr("Ask AI", "জিজ্ঞাসা") else tr("Unlock", "আনলক"))
                         }
                     }
-                    FilledTonalButton(onClick = onOpenAiAdvisor) {
-                        Text(tr("Ask AI", "জিজ্ঞাসা"))
+                }
+            }
+        }
+
+        // Separate Option Card: Duck & Chicken Farming Guide + Summary
+        if (policy.has(AppPermission.FARM_GUIDE_VIEW)) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_farm_guide_card")
+                        .clickable { onOpenGuide() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.MenuBook,
+                                        contentDescription = strings.farmGuide,
+                                        tint = MaterialTheme.colorScheme.onSecondary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                FeaturePlanBadge(
+                                    isFree = subPolicy.isFree(SubscriptionFeature.FARM_GUIDE),
+                                    hasActiveSub = subPolicy.hasActiveSubscription
+                                )
+                                Text(
+                                    tr("Duck & Chicken Farming Guide + Summary", "হাঁস-মুরগি পালন, ডিম ফুটানো ও টিকা গাইড"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    tr(
+                                        "Hatch duck eggs • Raise ducks & chickens • Vaccine & medicine timing",
+                                        "সারাংশ • হাঁসের ডিম ফুটানো • হাঁস-মুরগি পালন • টিকা ও ওষুধের সময়সূচি"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        FilledTonalButton(onClick = onOpenGuide) {
+                            Text(tr("Open", "খুলুন"))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom Added Options granted to this user
+        val visibleCustomOptions = state.customPermissionOptions.filter { policy.hasKey(it.permissionKey) }
+        if (visibleCustomOptions.isNotEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            tr("Enabled Custom Options", "চালু থাকা নতুন অপশনসমূহ"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        visibleCustomOptions.forEach { opt ->
+                            val title = if (isBn && opt.titleBn.isNotBlank()) opt.titleBn else opt.titleEn
+                            val desc = if (isBn && opt.descriptionBn.isNotBlank()) opt.descriptionBn else opt.descriptionEn
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                    if (desc.isNotBlank()) {
+                                        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
         // Financial & Livestock KPI Grid (2-column pairs)
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricCard(
-                        title = strings.netProfitLoss,
-                        value = CurrencyFormatter.formatCompact(netProfit, currency),
-                        icon = Icons.Default.TrendingUp,
-                        tint = if (netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        subtitle = if (netProfit >= 0) tr("Profitable", "লাভজনক") else tr("Net Loss", "নিট ক্ষতি"),
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiMetricCard(
-                        title = strings.totalFarms,
-                        value = "${state.farms.size}",
-                        icon = Icons.Default.Agriculture,
-                        subtitle = tr("Multi-farm active", "একাধিক খামার সক্রিয়"),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricCard(
-                        title = strings.totalSales,
-                        value = CurrencyFormatter.formatCompact(totalSales, currency),
-                        icon = Icons.Default.ShoppingBag,
-                        subtitle = "${tr("Paid", "পরিশোধিত")}: ${CurrencyFormatter.formatCompact(totalIncome, currency)}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiMetricCard(
-                        title = strings.totalExpenses,
-                        value = CurrencyFormatter.formatCompact(totalExpenses, currency),
-                        icon = Icons.Default.ReceiptLong,
-                        tint = MaterialTheme.colorScheme.error,
-                        subtitle = "${tr("Due", "বকেয়া")}: ${CurrencyFormatter.formatCompact(totalDue, currency)}",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricCard(
-                        title = strings.totalAnimals,
-                        value = "$totalAnimals",
-                        icon = Icons.Default.CrueltyFree,
-                        subtitle = "${strings.totalBirds}: $totalBirds",
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiMetricCard(
-                        title = strings.eggsAvailable,
-                        value = "$eggsAvailable",
-                        icon = Icons.Default.Egg,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        subtitle = "${strings.eggsProduced}: $eggsProduced",
-                        modifier = Modifier.weight(1f)
-                    )
+        if (policy.has(AppPermission.DASHBOARD_OVERVIEW)) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        KpiMetricCard(
+                            title = strings.netProfitLoss,
+                            value = CurrencyFormatter.formatCompact(netProfit, currency),
+                            icon = Icons.Default.TrendingUp,
+                            tint = if (netProfit >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            subtitle = if (netProfit >= 0) tr("Profitable", "লাভজনক") else tr("Net Loss", "নিট ক্ষতি"),
+                            modifier = Modifier.weight(1f)
+                        )
+                        KpiMetricCard(
+                            title = strings.totalFarms,
+                            value = "${state.farms.size}",
+                            icon = Icons.Default.Agriculture,
+                            subtitle = tr("Multi-farm active", "একাধিক খামার সক্রিয়"),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        KpiMetricCard(
+                            title = strings.totalSales,
+                            value = CurrencyFormatter.formatCompact(totalSales, currency),
+                            icon = Icons.Default.ShoppingBag,
+                            subtitle = "${tr("Paid", "পরিশোধিত")}: ${CurrencyFormatter.formatCompact(totalIncome, currency)}",
+                            modifier = Modifier.weight(1f)
+                        )
+                        KpiMetricCard(
+                            title = strings.totalExpenses,
+                            value = CurrencyFormatter.formatCompact(totalExpenses, currency),
+                            icon = Icons.Default.ReceiptLong,
+                            tint = MaterialTheme.colorScheme.error,
+                            subtitle = "${tr("Due", "বকেয়া")}: ${CurrencyFormatter.formatCompact(totalDue, currency)}",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        KpiMetricCard(
+                            title = strings.totalAnimals,
+                            value = "$totalAnimals",
+                            icon = Icons.Default.CrueltyFree,
+                            subtitle = "${strings.totalBirds}: $totalBirds",
+                            modifier = Modifier.weight(1f)
+                        )
+                        KpiMetricCard(
+                            title = strings.eggsAvailable,
+                            value = "$eggsAvailable",
+                            icon = Icons.Default.Egg,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            subtitle = "${strings.eggsProduced}: $eggsProduced",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
 
         // Charts: Farm-wise Sales vs Expenses + Egg Production Trend
-        item {
-            val farmBarEntries = state.farms.take(6).map { farm ->
-                val fSales = state.sales.filter { it.farmId == farm.id }.sumOf { it.totalAmount }
-                val fExp = state.expenses.filter { it.farmId == farm.id }.sumOf { it.amount }
-                DualBarEntry(
-                    label = farm.name.take(9),
-                    primaryValue = CurrencyFormatter.convertFromBase(fSales, currency),
-                    secondaryValue = CurrencyFormatter.convertFromBase(fExp, currency)
-                )
-            }
-            DualBarComparisonChart(
-                title = "${strings.farmPerformance} (${currency.symbol})",
-                primaryLabel = strings.totalSales,
-                secondaryLabel = strings.totalExpenses,
-                entries = farmBarEntries
-            )
-        }
+        if (policy.has(AppPermission.DASHBOARD_CHARTS)) {
+            if (!subPolicy.canAccess(SubscriptionFeature.DASHBOARD_CHARTS_AI)) {
+                item {
+                    SubscriptionRequiredLockCard(
+                        feature = SubscriptionFeature.DASHBOARD_CHARTS_AI,
+                        onOpenSubscription = onOpenSubscription,
+                        canSubscribe = canSubscribe
+                    )
+                }
+            } else {
+                item {
+                    val farmBarEntries = state.farms.take(6).map { farm ->
+                        val fSales = state.sales.filter { it.farmId == farm.id }.sumOf { it.totalAmount }
+                        val fExp = state.expenses.filter { it.farmId == farm.id }.sumOf { it.amount }
+                        DualBarEntry(
+                            label = farm.name.take(9),
+                            primaryValue = CurrencyFormatter.convertFromBase(fSales, currency),
+                            secondaryValue = CurrencyFormatter.convertFromBase(fExp, currency)
+                        )
+                    }
+                    DualBarComparisonChart(
+                        title = "${strings.farmPerformance} (${currency.symbol})",
+                        primaryLabel = strings.totalSales,
+                        secondaryLabel = strings.totalExpenses,
+                        entries = farmBarEntries
+                    )
+                }
 
-        item {
-            val eggPoints = filteredEggs.take(6).reversed().mapIndexed { idx, egg ->
-                "${tr("D", "দিন")}${idx + 1}" to egg.producedCount.toDouble()
+                item {
+                    val eggPoints = filteredEggs.take(6).reversed().mapIndexed { idx, egg ->
+                        "${tr("D", "দিন")}${idx + 1}" to egg.producedCount.toDouble()
+                    }
+                    SmoothAreaLineChart(
+                        title = strings.eggProductionTrend,
+                        points = eggPoints
+                    )
+                }
             }
-            SmoothAreaLineChart(
-                title = strings.eggProductionTrend,
-                points = eggPoints
-            )
         }
     }
 }
@@ -418,15 +626,54 @@ fun FarmsScreen(
     state: FarmerDashboardState,
     strings: AppStrings,
     currency: CurrencyOption,
+    openCreateOnEntry: Boolean = false,
+    onCreateEntryConsumed: () -> Unit = {},
     onSelectFarm: (Long?) -> Unit,
     onSaveFarm: (FarmEntity) -> Unit,
-    onDeleteFarm: (FarmEntity) -> Unit
+    onDeleteFarm: (FarmEntity) -> Unit,
+    onOpenSubscription: () -> Unit = {}
 ) {
     val isBn = isBangla()
+    val policy = state.accessPolicy
+    val subPolicy = state.subscriptionPolicy
+    if (!subPolicy.canAccess(SubscriptionFeature.MULTI_FARM_MANAGEMENT)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(strings.farms, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                FeaturePlanBadge(isFree = false, hasActiveSub = false)
+            }
+            SubscriptionRequiredLockCard(
+                feature = SubscriptionFeature.MULTI_FARM_MANAGEMENT,
+                onOpenSubscription = onOpenSubscription,
+                canSubscribe = policy.has(AppPermission.SUBSCRIPTION_MANAGE)
+            )
+        }
+        return
+    }
+
+    val canCreateEdit = policy.has(AppPermission.FARMS_CREATE_EDIT)
+    val canDelete = policy.has(AppPermission.FARMS_DELETE)
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var editingFarm by remember { mutableStateOf<FarmEntity?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(openCreateOnEntry, canCreateEdit) {
+        if (openCreateOnEntry) {
+            if (canCreateEdit) showCreateDialog = true
+            onCreateEntryConsumed()
+        }
+    }
 
     val filteredFarms = remember(state.farms, searchQuery, selectedCategory) {
         state.farms.filter { farm ->
@@ -440,12 +687,14 @@ fun FarmsScreen(
 
     Scaffold(
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showCreateDialog = true },
-                icon = { Icon(Icons.Default.AddBusiness, contentDescription = strings.addFarm) },
-                text = { Text(strings.addFarm) },
-                modifier = Modifier.testTag("add_farm_fab")
-            )
+            if (canCreateEdit) {
+                ExtendedFloatingActionButton(
+                    onClick = { showCreateDialog = true },
+                    icon = { Icon(Icons.Default.AddBusiness, contentDescription = strings.addFarm) },
+                    text = { Text(strings.addFarm) },
+                    modifier = Modifier.testTag("add_farm_fab")
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -456,11 +705,21 @@ fun FarmsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text(
-                    "${strings.farms} (${state.farms.size})",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${strings.farms} (${state.farms.size})",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    FeaturePlanBadge(
+                        isFree = subPolicy.isFree(SubscriptionFeature.MULTI_FARM_MANAGEMENT),
+                        hasActiveSub = subPolicy.hasActiveSubscription
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = searchQuery,
@@ -498,8 +757,8 @@ fun FarmsScreen(
                             "Create unlimited independent farms (1, 10, 50, 100+).",
                             "সীমাহীন স্বাধীন খামার তৈরি করুন (১, ১০, ৫০, ১০০+)।"
                         ),
-                        actionLabel = strings.addFarm,
-                        onAction = { showCreateDialog = true }
+                        actionLabel = if (canCreateEdit) strings.addFarm else null,
+                        onAction = if (canCreateEdit) ({ showCreateDialog = true }) else null
                     )
                 }
             } else {
@@ -587,12 +846,18 @@ fun FarmsScreen(
                                         Text(farm.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                         Text("${farm.location} • ${farm.address}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                    Row {
-                                        IconButton(onClick = { editingFarm = farm }) {
-                                            Icon(Icons.Default.Edit, contentDescription = strings.edit)
-                                        }
-                                        IconButton(onClick = { onDeleteFarm(farm) }) {
-                                            Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                    if (canCreateEdit || canDelete) {
+                                        Row {
+                                            if (canCreateEdit) {
+                                                IconButton(onClick = { editingFarm = farm }) {
+                                                    Icon(Icons.Default.Edit, contentDescription = strings.edit)
+                                                }
+                                            }
+                                            if (canDelete) {
+                                                IconButton(onClick = { onDeleteFarm(farm) }) {
+                                                    Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -681,6 +946,7 @@ private fun FarmEditorDialog(
         )
     }
     var imageUri by remember { mutableStateOf(initial?.imageUri) }
+    var showNameError by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) imageUri = uri.toString()
@@ -703,7 +969,7 @@ private fun FarmEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onClick = { safeLaunchImagePicker(picker) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null)
@@ -713,14 +979,59 @@ private fun FarmEditorDialog(
                         else tr("Change Selected Image", "নির্বাচিত ছবি পরিবর্তন করুন")
                     )
                 }
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Farm Name *", "খামারের নাম *")) }, singleLine = true)
-                OutlinedTextField(value = farmCode, onValueChange = { farmCode = it }, label = { Text(tr("Farm ID", "খামার আইডি")) }, singleLine = true)
-                OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text(tr("Location (City/District)", "অবস্থান (শহর/জেলা)")) }, singleLine = true)
-                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("Full Address", "সম্পূর্ণ ঠিকানা")) })
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (it.isNotBlank()) showNameError = false
+                    },
+                    label = { Text(tr("Farm Name *", "খামারের নাম *")) },
+                    isError = showNameError && name.isBlank(),
+                    supportingText = if (showNameError && name.isBlank()) {
+                        { Text(tr("Please enter a farm name", "অনুগ্রহ করে খামারের নাম লিখুন")) }
+                    } else null,
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("farm_name_input")
+                )
+                OutlinedTextField(
+                    value = farmCode,
+                    onValueChange = { farmCode = it },
+                    label = { Text(tr("Farm ID", "খামার আইডি")) },
+                    trailingIcon = {
+                        IconButton(onClick = { farmCode = "FM-${(1000..9999).random()}" }) {
+                            Icon(Icons.Default.Refresh, contentDescription = tr("Generate new Farm ID", "নতুন খামার আইডি তৈরি করুন"))
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("farm_code_input")
+                )
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    label = { Text(tr("Location (City/District)", "অবস্থান (শহর/জেলা)")) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("farm_location_input")
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text(tr("Full Address", "সম্পূর্ণ ঠিকানা")) },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Text(tr("Farm Category", "খামারের ধরন"), style = MaterialTheme.typography.labelLarge)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(FarmCategory.entries) { cat ->
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FarmCategory.entries.forEach { cat ->
                         FilterChip(
                             selected = category == cat.name,
                             onClick = { category = cat.name },
@@ -729,23 +1040,45 @@ private fun FarmEditorDialog(
                     }
                 }
                 if (category == FarmCategory.CUSTOM.name) {
-                    OutlinedTextField(value = customCat, onValueChange = { customCat = it }, label = { Text(tr("Custom Category Name", "কাস্টম ধরনের নাম")) }, singleLine = true)
+                    OutlinedTextField(
+                        value = customCat,
+                        onValueChange = { customCat = it },
+                        label = { Text(tr("Custom Category Name", "কাস্টম ধরনের নাম")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-                OutlinedTextField(value = managerName, onValueChange = { managerName = it }, label = { Text(tr("Manager Name", "ম্যানেজারের নাম")) }, singleLine = true)
-                OutlinedTextField(value = managerPhone, onValueChange = { managerPhone = it }, label = { Text(tr("Manager Phone", "ম্যানেজারের মোবাইল")) }, singleLine = true)
+                OutlinedTextField(
+                    value = managerName,
+                    onValueChange = { managerName = it },
+                    label = { Text(tr("Manager Name", "ম্যানেজারের নাম")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = managerPhone,
+                    onValueChange = { managerPhone = it },
+                    label = { Text(tr("Manager Phone", "ম্যানেজারের মোবাইল")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 OutlinedTextField(
                     value = investmentText,
                     onValueChange = { investmentText = it },
                     label = { Text("${tr("Initial Investment", "প্রাথমিক বিনিয়োগ")} (${currency.symbol})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
             Button(
-                enabled = name.isNotBlank(),
                 onClick = {
+                    if (name.isBlank()) {
+                        showNameError = true
+                        return@Button
+                    }
                     val baseInvestment = CurrencyFormatter.toBaseBdt(investmentText.toDoubleOrNull() ?: 0.0, currency)
                     onSave(
                         (initial ?: FarmEntity(ownerUserId = 0L, farmCode = farmCode, name = name, location = location, address = address)).copy(
@@ -761,7 +1094,8 @@ private fun FarmEditorDialog(
                             imageUri = imageUri
                         )
                     )
-                }
+                },
+                modifier = Modifier.testTag("save_farm_button")
             ) { Text(tr("Save Farm", "খামার সংরক্ষণ করুন")) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }

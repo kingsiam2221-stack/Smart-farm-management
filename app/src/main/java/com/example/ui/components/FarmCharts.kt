@@ -69,7 +69,14 @@ fun DualBarComparisonChart(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                val maxVal = (entries.maxOfOrNull { maxOf(it.primaryValue, it.secondaryValue) } ?: 1.0)
+                val safeEntries = entries.map {
+                    DualBarEntry(
+                        label = it.label,
+                        primaryValue = it.primaryValue.finiteNonNeg(),
+                        secondaryValue = it.secondaryValue.finiteNonNeg()
+                    )
+                }
+                val maxVal = (safeEntries.maxOfOrNull { maxOf(it.primaryValue, it.secondaryValue) } ?: 1.0)
                     .coerceAtLeast(1.0)
                 val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
 
@@ -78,7 +85,7 @@ fun DualBarComparisonChart(
                         .fillMaxWidth()
                         .height(140.dp)
                 ) {
-                    val count = entries.size
+                    val count = safeEntries.size.coerceAtLeast(1)
                     val slotWidth = size.width / count
                     val barWidth = (slotWidth * 0.28f).coerceIn(10f, 36f)
                     val gap = barWidth * 0.25f
@@ -88,10 +95,12 @@ fun DualBarComparisonChart(
                         drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
                     }
 
-                    entries.forEachIndexed { idx, item ->
+                    safeEntries.forEachIndexed { idx, item ->
                         val centerX = slotWidth * idx + slotWidth / 2f
-                        val h1 = ((item.primaryValue / maxVal) * (size.height - 8f)).toFloat().coerceAtLeast(4f)
-                        val h2 = ((item.secondaryValue / maxVal) * (size.height - 8f)).toFloat().coerceAtLeast(4f)
+                        val h1 = ((item.primaryValue / maxVal) * (size.height - 8f)).toFloat()
+                            .coerceIn(4f, size.height)
+                        val h2 = ((item.secondaryValue / maxVal) * (size.height - 8f)).toFloat()
+                            .coerceIn(4f, size.height)
 
                         drawRoundRect(
                             color = primaryColor,
@@ -148,8 +157,9 @@ fun SmoothAreaLineChart(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                val maxVal = (points.maxOfOrNull { it.second } ?: 1.0).coerceAtLeast(1.0)
-                val minVal = (points.minOfOrNull { it.second } ?: 0.0).coerceAtMost(0.0)
+                val safePoints = points.map { it.first to it.second.finiteOrZero() }
+                val maxVal = (safePoints.maxOfOrNull { it.second } ?: 1.0).coerceAtLeast(1.0)
+                val minVal = (safePoints.minOfOrNull { it.second } ?: 0.0).coerceAtMost(0.0)
                 val range = (maxVal - minVal).coerceAtLeast(1.0)
 
                 Canvas(
@@ -157,10 +167,10 @@ fun SmoothAreaLineChart(
                         .fillMaxWidth()
                         .height(125.dp)
                 ) {
-                    val stepX = if (points.size > 1) size.width / (points.size - 1) else size.width
-                    val coords = points.mapIndexed { idx, (_, v) ->
-                        val x = if (points.size == 1) size.width / 2f else idx * stepX
-                        val normY = ((v - minVal) / range).toFloat()
+                    val stepX = if (safePoints.size > 1) size.width / (safePoints.size - 1) else size.width
+                    val coords = safePoints.mapIndexed { idx, (_, v) ->
+                        val x = if (safePoints.size == 1) size.width / 2f else idx * stepX
+                        val normY = ((v - minVal) / range).toFloat().coerceIn(0f, 1f)
                         val y = size.height - (normY * (size.height - 16f)) - 8f
                         Offset(x, y)
                     }
@@ -226,8 +236,9 @@ fun CategoryBreakdownDonut(
         Column(modifier = Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
-            val total = slices.sumOf { it.value }
-            if (slices.isEmpty() || total <= 0.0) {
+            val safeSlices = slices.map { it.copy(value = it.value.finiteNonNeg()) }
+            val total = safeSlices.sumOf { it.value }
+            if (safeSlices.isEmpty() || total <= 0.0) {
                 Text(
                     tr("Add records to see breakdown", "বিশ্লেষণ দেখতে তথ্য যোগ করুন"),
                     style = MaterialTheme.typography.bodyMedium,
@@ -241,8 +252,8 @@ fun CategoryBreakdownDonut(
                 ) {
                     Canvas(modifier = Modifier.size(104.dp)) {
                         var startAngle = -90f
-                        slices.forEach { slice ->
-                            val sweep = ((slice.value / total) * 360f).toFloat()
+                        safeSlices.forEach { slice ->
+                            val sweep = ((slice.value / total) * 360f).toFloat().coerceIn(0f, 360f)
                             drawArc(
                                 color = slice.color,
                                 startAngle = startAngle,
@@ -254,7 +265,7 @@ fun CategoryBreakdownDonut(
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
-                        slices.take(5).forEach { slice ->
+                        safeSlices.take(5).forEach { slice ->
                             val pct = ((slice.value / total) * 100).toInt()
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -283,3 +294,6 @@ private fun LegendDot(color: Color, label: String) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+private fun Double.finiteOrZero(): Double = if (isFinite()) this else 0.0
+private fun Double.finiteNonNeg(): Double = if (isFinite() && this > 0.0) this else 0.0

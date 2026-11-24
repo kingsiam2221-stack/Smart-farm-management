@@ -46,7 +46,10 @@ interface FarmDao {
     @Query("SELECT * FROM farms WHERE id = :farmId LIMIT 1")
     suspend fun getFarmById(farmId: Long): FarmEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Query("SELECT * FROM farms WHERE farmCode = :code LIMIT 1")
+    suspend fun getFarmByCode(code: String): FarmEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(farm: FarmEntity): Long
 
     @Update
@@ -196,6 +199,15 @@ interface OperationsDao {
     @Query("SELECT * FROM employees WHERE ownerUserId = :ownerId ORDER BY joiningDate DESC")
     fun observeEmployeesByOwner(ownerId: Long): Flow<List<EmployeeEntity>>
 
+    @Query("SELECT * FROM employees ORDER BY joiningDate DESC")
+    fun observeAllEmployees(): Flow<List<EmployeeEntity>>
+
+    @Query("SELECT * FROM employees WHERE id = :id LIMIT 1")
+    suspend fun getEmployeeById(id: Long): EmployeeEntity?
+
+    @Query("SELECT * FROM employees WHERE linkedUserId = :userId LIMIT 1")
+    suspend fun getEmployeeByLinkedUserId(userId: Long): EmployeeEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEmployee(employee: EmployeeEntity): Long
 
@@ -235,6 +247,9 @@ interface SubscriptionAndAdminDao {
     @Query("SELECT * FROM user_subscriptions WHERE status = 'ACTIVE' AND expiryDate < :now")
     suspend fun findExpiredActiveSubscriptions(now: Long): List<UserSubscriptionEntity>
 
+    @Query("UPDATE user_subscriptions SET status = :newStatus WHERE userId = :userId AND status = 'ACTIVE'")
+    suspend fun deactivateActiveSubscriptionsForUser(userId: Long, newStatus: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUserSubscription(sub: UserSubscriptionEntity): Long
 
@@ -273,4 +288,46 @@ interface SubscriptionAndAdminDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSystemSettings(settings: SystemSettingsEntity)
+}
+
+@Dao
+interface PermissionDao {
+    @Query("SELECT * FROM employee_permissions WHERE ownerUserId = :ownerId")
+    fun observePermissionsByOwner(ownerId: Long): Flow<List<EmployeePermissionEntity>>
+
+    @Query("SELECT * FROM employee_permissions")
+    fun observeAllPermissions(): Flow<List<EmployeePermissionEntity>>
+
+    @Query("SELECT * FROM employee_permissions WHERE employeeId = :employeeId")
+    fun observePermissionsForEmployee(employeeId: Long): Flow<List<EmployeePermissionEntity>>
+
+    @Query("SELECT * FROM employee_permissions WHERE employeeId = :employeeId")
+    suspend fun getPermissionsForEmployee(employeeId: Long): List<EmployeePermissionEntity>
+
+    @Query("SELECT * FROM employee_permissions WHERE employeeId = :employeeId AND permissionKey = :permissionKey LIMIT 1")
+    suspend fun getPermission(employeeId: Long, permissionKey: String): EmployeePermissionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPermission(permission: EmployeePermissionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPermissions(permissions: List<EmployeePermissionEntity>)
+
+    @Query("SELECT * FROM custom_permission_options WHERE ownerUserId = :ownerId ORDER BY createdAt DESC")
+    fun observeCustomOptionsByOwner(ownerId: Long): Flow<List<CustomPermissionOptionEntity>>
+
+    @Query("SELECT * FROM custom_permission_options ORDER BY createdAt DESC")
+    fun observeAllCustomOptions(): Flow<List<CustomPermissionOptionEntity>>
+
+    @Query("SELECT * FROM custom_permission_options WHERE permissionKey = :key LIMIT 1")
+    suspend fun getCustomOptionByKey(key: String): CustomPermissionOptionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomOption(option: CustomPermissionOptionEntity): Long
+
+    @Delete
+    suspend fun deleteCustomOption(option: CustomPermissionOptionEntity)
+
+    @Query("DELETE FROM employee_permissions WHERE permissionKey = :permissionKey")
+    suspend fun deletePermissionsByKey(permissionKey: String)
 }

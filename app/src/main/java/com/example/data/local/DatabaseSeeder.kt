@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import kotlinx.coroutines.flow.first
 import java.security.MessageDigest
 
 object PasswordHasher {
@@ -19,7 +20,10 @@ object DatabaseSeeder {
 
     suspend fun seedIfEmpty(db: SmartFarmDatabase) {
         val userDao = db.userDao()
-        if (userDao.countUsers() > 0) return
+        if (userDao.countUsers() > 0) {
+            ensureDefaultEmployeePermissionsIfMissing(db)
+            return
+        }
 
         val now = System.currentTimeMillis()
 
@@ -61,6 +65,34 @@ object DatabaseSeeder {
                 preferredLanguage = "en",
                 preferredCurrency = "BDT",
                 createdAt = now - 120 * DAY_MS
+            )
+        )
+        val empUser1Id = userDao.insert(
+            UserEntity(
+                name = "Karim Mia",
+                mobile = "+8801722334455",
+                email = "karim@smartfarm.app",
+                passwordHash = PasswordHasher.hash("employee123"),
+                role = UserRole.EMPLOYEE.name,
+                status = AccountStatus.ACTIVE.name,
+                preferredLanguage = "en",
+                preferredCurrency = "BDT",
+                employerOwnerId = farmerId,
+                createdAt = now - 80 * DAY_MS
+            )
+        )
+        val empUser2Id = userDao.insert(
+            UserEntity(
+                name = "Salma Khatun",
+                mobile = "+8801733445566",
+                email = "salma@smartfarm.app",
+                passwordHash = PasswordHasher.hash("employee123"),
+                role = UserRole.EMPLOYEE.name,
+                status = AccountStatus.ACTIVE.name,
+                preferredLanguage = "en",
+                preferredCurrency = "BDT",
+                employerOwnerId = farmerId,
+                createdAt = now - 80 * DAY_MS
             )
         )
 
@@ -614,10 +646,12 @@ object DatabaseSeeder {
                 canManageInventory = true,
                 canManageSales = true,
                 canManageLivestock = true,
-                lastAttendanceStatus = AttendanceStatus.PRESENT.name
+                lastAttendanceStatus = AttendanceStatus.PRESENT.name,
+                email = "karim@smartfarm.app",
+                linkedUserId = empUser1Id
             )
         )
-        opsDao.insertEmployee(
+        val emp2Id = opsDao.insertEmployee(
             EmployeeEntity(
                 farmId = farm2Id,
                 ownerUserId = farmerId,
@@ -629,7 +663,9 @@ object DatabaseSeeder {
                 canManageInventory = true,
                 canManageSales = false,
                 canManageLivestock = true,
-                lastAttendanceStatus = AttendanceStatus.PRESENT.name
+                lastAttendanceStatus = AttendanceStatus.PRESENT.name,
+                email = "salma@smartfarm.app",
+                linkedUserId = empUser2Id
             )
         )
         opsDao.insertSalaryPayment(
@@ -642,6 +678,29 @@ object DatabaseSeeder {
                 paymentDate = now - 15 * DAY_MS,
                 note = "Monthly salary paid via bKash"
             )
+        )
+
+        // Seed Granular Employee Permissions
+        val permDao = db.permissionDao()
+        permDao.upsertPermissions(
+            AppPermission.entries.map { perm ->
+                EmployeePermissionEntity(
+                    employeeId = emp1Id,
+                    ownerUserId = farmerId,
+                    permissionKey = perm.key,
+                    granted = PermissionPreset.MANAGER.keys.contains(perm.key)
+                )
+            }
+        )
+        permDao.upsertPermissions(
+            AppPermission.entries.map { perm ->
+                EmployeePermissionEntity(
+                    employeeId = emp2Id,
+                    ownerUserId = farmerId,
+                    permissionKey = perm.key,
+                    granted = PermissionPreset.POULTRY_WORKER.keys.contains(perm.key)
+                )
+            }
         )
 
         // 10. Seed Subscription Plans, User Subscriptions, Notifications, Support, Audit & Settings
@@ -760,5 +819,55 @@ object DatabaseSeeder {
         )
 
         subDao.saveSystemSettings(SystemSettingsEntity())
+    }
+
+    suspend fun ensureDefaultEmployeePermissionsIfMissing(db: SmartFarmDatabase) {
+        val opsDao = db.operationsDao()
+        val permDao = db.permissionDao()
+        val userDao = db.userDao()
+        val allEmployees: List<EmployeeEntity> = opsDao.observeAllEmployees().first()
+        for (emp in allEmployees) {
+            if (permDao.getPermissionsForEmployee(emp.id).isEmpty()) {
+                val keys = PermissionCatalog.defaultGrantedKeysFromLegacyFlags(emp)
+                permDao.upsertPermissions(
+                    AppPermission.entries.map { p ->
+                        EmployeePermissionEntity(
+                            employeeId = emp.id,
+                            ownerUserId = emp.ownerUserId,
+                            permissionKey = p.key,
+                            granted = keys.contains(p.key)
+                        )
+                    }
+                )
+            }
+        }
+        // Ensure seeded employee users link cleanly if Farmer exists and they don't exist yet
+        val farmer = userDao.getUserByEmail("farmer@smartfarm.app") ?: return
+        listOf(
+            Triple("karim@smartfarm.app", "Karim Mia", "+8801722334455"),
+            Triple("salma@smartfarm.app", "Salma Khatun", "+8801733445566")
+        ).forEach { (email, name, phone) ->
+            if (userDao.getUserByEmail(email) == null) {
+                val matchedEmp = allEmployees.firstOrNull {
+                    it.ownerUserId == farmer.id && it.name.equals(name, ignoreCase = true)
+                }
+                if (matchedEmp != null) {
+                    val uid = userDao.insert(
+                        UserEntity(
+                            name = matchedEmp.name,
+                            mobile = matchedEmp.phone.ifBlank { phone },
+                            email = email,
+                            passwordHash = PasswordHasher.hash("employee123"),
+                            role = UserRole.EMPLOYEE.name,
+                            status = AccountStatus.ACTIVE.name,
+                            preferredLanguage = farmer.preferredLanguage,
+                            preferredCurrency = farmer.preferredCurrency,
+                            employerOwnerId = farmer.id
+                        )
+                    )
+                    opsDao.updateEmployee(matchedEmp.copy(email = email, linkedUserId = uid))
+                }
+            }
+        }
     }
 }

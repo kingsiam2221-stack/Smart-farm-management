@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import com.example.data.local.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlin.math.max
 
 class FarmRepository(private val db: SmartFarmDatabase) {
@@ -13,6 +14,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     private val commerceDao = db.commerceDao()
     private val opsDao = db.operationsDao()
     private val subAdminDao = db.subscriptionAndAdminDao()
+    private val permissionDao = db.permissionDao()
 
     suspend fun initializeDatabase() {
         DatabaseSeeder.seedIfEmpty(db)
@@ -51,8 +53,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         if (name.isBlank() || mobile.isBlank() || email.isBlank() || password.length < 4) {
             return Result.failure(IllegalArgumentException("Please complete all fields (password min 4 chars)."))
         }
-        if (role == UserRole.SUPER_ADMIN) {
-            return Result.failure(SecurityException("Public Super Admin registration is restricted."))
+        if (role == UserRole.SUPER_ADMIN || role == UserRole.EMPLOYEE) {
+            return Result.failure(SecurityException("Public registration for this role is restricted."))
         }
         if (userDao.getUserByEmail(email.trim()) != null) {
             return Result.failure(IllegalArgumentException("An account with this email already exists."))
@@ -129,23 +131,156 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     fun observeAllSupportAdmin(): Flow<List<SupportRequestEntity>> = subAdminDao.observeAllSupport()
     fun observeAuditLogs(): Flow<List<AdminAuditLogEntity>> = subAdminDao.observeAuditLogs()
 
+    // --- Employee Permissions & Context Streams ---
+    fun observePermissionsByOwner(ownerId: Long): Flow<List<EmployeePermissionEntity>> =
+        permissionDao.observePermissionsByOwner(ownerId)
+
+    fun observeAllPermissions(): Flow<List<EmployeePermissionEntity>> =
+        permissionDao.observeAllPermissions()
+
+    fun observePermissionsForEmployee(employeeId: Long): Flow<List<EmployeePermissionEntity>> =
+        permissionDao.observePermissionsForEmployee(employeeId)
+
+    fun observeCustomOptionsByOwner(ownerId: Long): Flow<List<CustomPermissionOptionEntity>> =
+        permissionDao.observeCustomOptionsByOwner(ownerId)
+
+    fun observeAllCustomOptions(): Flow<List<CustomPermissionOptionEntity>> =
+        permissionDao.observeAllCustomOptions()
+
+    fun observeAllEmployeesAdmin(): Flow<List<EmployeeEntity>> =
+        opsDao.observeAllEmployees()
+
+    suspend fun resolveEmployeeContext(user: UserEntity): Pair<Long, Long?> {
+        if (user.role != UserRole.EMPLOYEE.name) return user.id to null
+        val linked = opsDao.getEmployeeByLinkedUserId(user.id)
+        val ownerId = user.employerOwnerId ?: linked?.ownerUserId ?: user.id
+        return ownerId to linked?.id
+    }
+
+    private suspend fun requireFarmAdminOrSuperAdmin(actorUserId: Long, targetOwnerId: Long): UserEntity {
+        val actor = userDao.getUserById(actorUserId)
+            ?: throw SecurityException("Unauthorized: user not found.")
+        if (actor.status != AccountStatus.ACTIVE.name) {
+            throw SecurityException("Account is not active.")
+        }
+        val isSuperAdmin = actor.role == UserRole.SUPER_ADMIN.name
+        val isOwnerAdmin = actor.role == UserRole.FARMER.name && actor.id == targetOwnerId
+        if (!isSuperAdmin && !isOwnerAdmin) {
+            throw SecurityException("Access Denied: Only Admin can manage user permissions.")
+        }
+        return actor
+    }
+
+    suspend fun requireActorPermission(
+        actorUserId: Long?,
+        targetOwnerId: Long,
+        permission: AppPermission
+    ) {
+        if (actorUserId == null || actorUserId == targetOwnerId) return
+        val actor = userDao.getUserById(actorUserId)
+            ?: throw SecurityException("Unauthorized: user not found.")
+        if (actor.status != AccountStatus.ACTIVE.name) {
+            throw SecurityException("Account is not active.")
+        }
+        if (actor.role == UserRole.SUPER_ADMIN.name) return
+        if (actor.role == UserRole.FARMER.name && actor.id == targetOwnerId) return
+        if (actor.role == UserRole.EMPLOYEE.name && actor.employerOwnerId == targetOwnerId) {
+            val emp = opsDao.getEmployeeByLinkedUserId(actor.id)
+                ?: throw SecurityException("Employee profile not linked.")
+            val row = permissionDao.getPermission(emp.id, permission.key)
+            if (row?.granted == true) return
+            throw SecurityException("Permission denied: ${permission.titleEn}")
+        }
+        throw SecurityException("Access Denied.")
+    }
+
+    private suspend fun requireActiveSubscription(
+        ownerId: Long,
+        actorUserId: Long?,
+        feature: SubscriptionFeature
+    ) {
+        if (actorUserId != null) {
+            val actor = userDao.getUserById(actorUserId)
+            if (actor?.role == UserRole.SUPER_ADMIN.name) return
+        }
+        val settings = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val lockedKeys = settings.parseLockedFeatureKeys()
+        if (!lockedKeys.contains(feature.key)) return
+
+        val subs = subAdminDao.observeSubscriptionsByUser(ownerId).firstOrNull().orEmpty()
+        val now = System.currentTimeMillis()
+        val hasActive = subs.any {
+            it.status == "ACTIVE" &&
+                it.paymentStatus == PaymentStatus.SUCCESSFUL.name &&
+                it.expiryDate > now
+        }
+        if (!hasActive) {
+            throw SecurityException("Subscription required: ${feature.titleEn}")
+        }
+    }
+
     // --- Farm CRUD ---
-    suspend fun saveFarm(farm: FarmEntity): Long {
-        return if (farm.id == 0L) {
-            val code = farm.farmCode.ifBlank { "FM-${(1000..9999).random()}" }
-            farmDao.insert(farm.copy(farmCode = code))
+    private suspend fun generateUniqueFarmCode(preferredCode: String): String {
+        val base = preferredCode.trim().ifBlank { "FM-${(1000..9999).random()}" }
+        if (farmDao.getFarmByCode(base) == null) return base
+        repeat(20) {
+            val candidate = if (preferredCode.isBlank()) {
+                "FM-${(1000..9999).random()}"
+            } else {
+                "$base-${(10..99).random()}"
+            }
+            if (farmDao.getFarmByCode(candidate) == null) return candidate
+        }
+        return "FM-${System.currentTimeMillis().toString().takeLast(6)}"
+    }
+
+    suspend fun saveFarm(farm: FarmEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, farm.ownerUserId, AppPermission.FARMS_CREATE_EDIT)
+        requireActiveSubscription(farm.ownerUserId, actorUserId, SubscriptionFeature.MULTI_FARM_MANAGEMENT)
+        val cleanName = farm.name.trim()
+        if (cleanName.isBlank()) {
+            throw IllegalArgumentException("Farm name is required.")
+        }
+        userDao.getUserById(farm.ownerUserId)
+            ?: throw IllegalStateException("Please sign in before creating a farm.")
+
+        if (farm.id == 0L) {
+            val uniqueCode = generateUniqueFarmCode(farm.farmCode)
+            farmDao.insert(
+                farm.copy(
+                    name = cleanName,
+                    farmCode = uniqueCode,
+                    location = farm.location.trim(),
+                    address = farm.address.trim()
+                )
+            )
         } else {
-            farmDao.update(farm)
+            val trimmedCode = farm.farmCode.trim().ifBlank { "FM-${farm.id}" }
+            val conflicting = farmDao.getFarmByCode(trimmedCode)
+            if (conflicting != null && conflicting.id != farm.id) {
+                throw IllegalArgumentException("Farm ID '$trimmedCode' is already used by another farm.")
+            }
+            farmDao.update(
+                farm.copy(
+                    name = cleanName,
+                    farmCode = trimmedCode,
+                    location = farm.location.trim(),
+                    address = farm.address.trim()
+                )
+            )
             farm.id
         }
     }
 
-    suspend fun deleteFarm(farm: FarmEntity) {
+    suspend fun deleteFarm(farm: FarmEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, farm.ownerUserId, AppPermission.FARMS_DELETE)
         farmDao.delete(farm)
     }
 
     // --- Animal & Bird CRUD + Auto Count Sync ---
-    suspend fun addCustomAnimalCategory(ownerId: Long, name: String, isBird: Boolean) {
+    suspend fun addCustomAnimalCategory(ownerId: Long, name: String, isBird: Boolean, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, ownerId, AppPermission.LIVESTOCK_CREATE_EDIT)
+        requireActiveSubscription(ownerId, actorUserId, SubscriptionFeature.LIVESTOCK_TRACKING)
         if (name.isBlank()) return
         animalDao.insertCategory(
             AnimalCategoryEntity(
@@ -157,7 +292,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         )
     }
 
-    suspend fun saveAnimalRecord(record: AnimalRecordEntity): Long {
+    suspend fun saveAnimalRecord(record: AnimalRecordEntity, actorUserId: Long? = null): Long {
+        requireActorPermission(actorUserId, record.ownerUserId, AppPermission.LIVESTOCK_CREATE_EDIT)
+        requireActiveSubscription(record.ownerUserId, actorUserId, SubscriptionFeature.LIVESTOCK_TRACKING)
         return if (record.id == 0L) {
             val id = animalDao.insertAnimal(record)
             if (record.purchasePrice > 0.0) {
@@ -179,7 +316,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         }
     }
 
-    suspend fun deleteAnimalRecord(record: AnimalRecordEntity) {
+    suspend fun deleteAnimalRecord(record: AnimalRecordEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, record.ownerUserId, AppPermission.LIVESTOCK_DELETE)
         animalDao.deleteAnimal(record)
     }
 
@@ -188,8 +326,11 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         eventType: AnimalEventType,
         quantityDelta: Int,
         costOrValue: Double,
-        description: String
+        description: String,
+        actorUserId: Long? = null
     ) {
+        requireActorPermission(actorUserId, animal.ownerUserId, AppPermission.LIVESTOCK_HEALTH_EVENTS)
+        requireActiveSubscription(animal.ownerUserId, actorUserId, SubscriptionFeature.LIVESTOCK_TRACKING)
         val newQty = when (eventType) {
             AnimalEventType.BIRTH, AnimalEventType.PURCHASE -> animal.quantity + max(0, quantityDelta)
             AnimalEventType.DEATH, AnimalEventType.SALE, AnimalEventType.TRANSFER -> (animal.quantity - max(0, quantityDelta)).coerceAtLeast(0)
@@ -283,8 +424,11 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         brokenCount: Int,
         soldCount: Int,
         unitSellingPrice: Double,
-        productionDate: Long = System.currentTimeMillis()
+        productionDate: Long = System.currentTimeMillis(),
+        actorUserId: Long? = null
     ) {
+        requireActorPermission(actorUserId, ownerId, AppPermission.EGGS_RECORD)
+        requireActiveSubscription(ownerId, actorUserId, SubscriptionFeature.EGG_PRODUCTION)
         val prev = previousStockOverride
             ?: (eggDao.getLatestByFarmAndCategory(farmId, eggCategory)?.availableCount ?: 0)
         val available = (prev + producedCount - soldCount - brokenCount).coerceAtLeast(0)
@@ -314,12 +458,15 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         )
     }
 
-    suspend fun deleteEggRecord(record: EggProductionEntity) {
+    suspend fun deleteEggRecord(record: EggProductionEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, record.ownerUserId, AppPermission.EGGS_DELETE)
         eggDao.delete(record)
     }
 
     // --- Inventory Management ---
-    suspend fun saveInventoryItem(item: InventoryItemEntity): Long {
+    suspend fun saveInventoryItem(item: InventoryItemEntity, actorUserId: Long? = null): Long {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.INVENTORY_MANAGE)
+        requireActiveSubscription(item.ownerUserId, actorUserId, SubscriptionFeature.INVENTORY_EXPENSES)
         return if (item.id == 0L) {
             val id = inventoryDao.insertItem(item)
             if (item.quantity > 0.0) {
@@ -351,8 +498,11 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         isStockIn: Boolean,
         unitCost: Double,
         supplierName: String,
-        note: String
+        note: String,
+        actorUserId: Long? = null
     ) {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.INVENTORY_MANAGE)
+        requireActiveSubscription(item.ownerUserId, actorUserId, SubscriptionFeature.INVENTORY_EXPENSES)
         val newQty = if (isStockIn) item.quantity + delta else (item.quantity - delta).coerceAtLeast(0.0)
         val updated = item.copy(
             quantity = newQty,
@@ -394,7 +544,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         checkLowStockNotification(updated)
     }
 
-    suspend fun deleteInventoryItem(item: InventoryItemEntity) {
+    suspend fun deleteInventoryItem(item: InventoryItemEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, item.ownerUserId, AppPermission.INVENTORY_DELETE)
         inventoryDao.deleteItem(item)
     }
 
@@ -412,7 +563,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     }
 
     // --- Sales & Customers ---
-    suspend fun saveCustomer(customer: CustomerEntity): Long {
+    suspend fun saveCustomer(customer: CustomerEntity, actorUserId: Long? = null): Long {
+        requireActorPermission(actorUserId, customer.ownerUserId, AppPermission.CUSTOMERS_MANAGE)
+        requireActiveSubscription(customer.ownerUserId, actorUserId, SubscriptionFeature.BUY_SELL_SALES_CRM)
         return if (customer.id == 0L) {
             val code = customer.customerCode.ifBlank { "CUS-${(100..999).random()}" }
             commerceDao.insertCustomer(customer.copy(customerCode = code))
@@ -422,7 +575,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         }
     }
 
-    suspend fun deleteCustomer(customer: CustomerEntity) {
+    suspend fun deleteCustomer(customer: CustomerEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, customer.ownerUserId, AppPermission.CUSTOMERS_MANAGE)
         commerceDao.deleteCustomer(customer)
     }
 
@@ -440,8 +594,11 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         unitPrice: Double,
         discount: Double,
         paidAmount: Double,
-        paymentMethod: String
+        paymentMethod: String,
+        actorUserId: Long? = null
     ): SaleEntity {
+        requireActorPermission(actorUserId, ownerId, AppPermission.SALES_CREATE_COLLECT)
+        requireActiveSubscription(ownerId, actorUserId, SubscriptionFeature.BUY_SELL_SALES_CRM)
         val gross = quantity * unitPrice
         val total = (gross - discount).coerceAtLeast(0.0)
         val paid = paidAmount.coerceIn(0.0, total)
@@ -516,14 +673,17 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         return sale.copy(id = id)
     }
 
-    suspend fun settleSaleDue(sale: SaleEntity, additionalPayment: Double) {
+    suspend fun settleSaleDue(sale: SaleEntity, additionalPayment: Double, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, sale.ownerUserId, AppPermission.SALES_CREATE_COLLECT)
+        requireActiveSubscription(sale.ownerUserId, actorUserId, SubscriptionFeature.BUY_SELL_SALES_CRM)
         if (additionalPayment <= 0.0) return
         val newPaid = (sale.paidAmount + additionalPayment).coerceAtMost(sale.totalAmount)
         val newDue = (sale.totalAmount - newPaid).coerceAtLeast(0.0)
         commerceDao.updateSale(sale.copy(paidAmount = newPaid, dueAmount = newDue))
     }
 
-    suspend fun deleteSale(sale: SaleEntity) {
+    suspend fun deleteSale(sale: SaleEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, sale.ownerUserId, AppPermission.SALES_DELETE)
         commerceDao.deleteSale(sale)
     }
 
@@ -579,7 +739,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         return Result.success(createdOrders)
     }
 
-    suspend fun updateOrderStatus(order: OrderEntity, newStatus: OrderStatus) {
+    suspend fun updateOrderStatus(order: OrderEntity, newStatus: OrderStatus, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, order.farmOwnerUserId, AppPermission.ORDERS_MANAGE)
+        requireActiveSubscription(order.farmOwnerUserId, actorUserId, SubscriptionFeature.BUY_SELL_SALES_CRM)
         if (order.status == newStatus.name) return
         val wasPending = order.status == OrderStatus.PENDING.name
         commerceDao.updateOrder(order.copy(status = newStatus.name))
@@ -658,23 +820,48 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     }
 
     // --- Expenses & Employees ---
-    suspend fun addExpense(expense: ExpenseEntity) {
+    suspend fun addExpense(expense: ExpenseEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, expense.ownerUserId, AppPermission.EXPENSES_MANAGE)
+        requireActiveSubscription(expense.ownerUserId, actorUserId, SubscriptionFeature.INVENTORY_EXPENSES)
         opsDao.insertExpense(expense)
     }
 
-    suspend fun deleteExpense(expense: ExpenseEntity) {
+    suspend fun deleteExpense(expense: ExpenseEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, expense.ownerUserId, AppPermission.EXPENSES_MANAGE)
         opsDao.deleteExpense(expense)
     }
 
-    suspend fun saveEmployee(employee: EmployeeEntity) {
-        if (employee.id == 0L) opsDao.insertEmployee(employee) else opsDao.updateEmployee(employee)
+    suspend fun saveEmployee(employee: EmployeeEntity, actorUserId: Long? = null): Long {
+        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
+        return if (employee.id == 0L) {
+            val newId = opsDao.insertEmployee(employee)
+            val defaults = PermissionCatalog.defaultGrantedKeysFromLegacyFlags(employee)
+            permissionDao.upsertPermissions(
+                AppPermission.entries.map { perm ->
+                    EmployeePermissionEntity(
+                        employeeId = newId,
+                        ownerUserId = employee.ownerUserId,
+                        permissionKey = perm.key,
+                        granted = defaults.contains(perm.key)
+                    )
+                }
+            )
+            newId
+        } else {
+            opsDao.updateEmployee(employee)
+            employee.id
+        }
     }
 
-    suspend fun deleteEmployee(employee: EmployeeEntity) {
+    suspend fun deleteEmployee(employee: EmployeeEntity, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
         opsDao.deleteEmployee(employee)
     }
 
-    suspend fun markEmployeeAttendance(employee: EmployeeEntity, status: AttendanceStatus) {
+    suspend fun markEmployeeAttendance(employee: EmployeeEntity, status: AttendanceStatus, actorUserId: Long? = null) {
+        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
         opsDao.updateEmployee(
             employee.copy(
                 lastAttendanceStatus = status.name,
@@ -683,7 +870,15 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         )
     }
 
-    suspend fun payEmployeeSalary(employee: EmployeeEntity, amount: Double, monthLabel: String, note: String) {
+    suspend fun payEmployeeSalary(
+        employee: EmployeeEntity,
+        amount: Double,
+        monthLabel: String,
+        note: String,
+        actorUserId: Long? = null
+    ) {
+        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
         opsDao.insertSalaryPayment(
             SalaryPaymentEntity(
                 employeeId = employee.id,
@@ -705,8 +900,214 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         )
     }
 
+    // --- Admin-Only User Permissions & Employee Login Management ---
+    suspend fun provisionEmployeeLogin(
+        actorId: Long,
+        employee: EmployeeEntity,
+        email: String,
+        mobile: String,
+        password: String
+    ): Result<EmployeeEntity> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, employee.ownerUserId)
+        val cleanEmail = email.trim().lowercase()
+        val cleanMobile = mobile.trim().ifBlank { employee.phone }
+        if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+            throw IllegalArgumentException("Valid employee email is required.")
+        }
+        val existingByEmail = userDao.getUserByEmail(cleanEmail)
+        val currentLinked = employee.linkedUserId?.let { userDao.getUserById(it) }
+
+        val linkedUserId = if (currentLinked != null) {
+            if (existingByEmail != null && existingByEmail.id != currentLinked.id) {
+                throw IllegalArgumentException("An account with this email already exists.")
+            }
+            val updatedPasswordHash = if (password.length >= 4) {
+                PasswordHasher.hash(password)
+            } else {
+                currentLinked.passwordHash
+            }
+            userDao.update(
+                currentLinked.copy(
+                    name = employee.name,
+                    mobile = cleanMobile,
+                    email = cleanEmail,
+                    passwordHash = updatedPasswordHash,
+                    role = UserRole.EMPLOYEE.name,
+                    employerOwnerId = employee.ownerUserId
+                )
+            )
+            currentLinked.id
+        } else {
+            if (existingByEmail != null) {
+                throw IllegalArgumentException("An account with this email already exists.")
+            }
+            if (password.length < 4) {
+                throw IllegalArgumentException("Password must be at least 4 characters.")
+            }
+            userDao.insert(
+                UserEntity(
+                    name = employee.name,
+                    mobile = cleanMobile,
+                    email = cleanEmail,
+                    passwordHash = PasswordHasher.hash(password),
+                    role = UserRole.EMPLOYEE.name,
+                    status = AccountStatus.ACTIVE.name,
+                    employerOwnerId = employee.ownerUserId
+                )
+            )
+        }
+
+        val updatedEmployee = employee.copy(
+            email = cleanEmail,
+            phone = cleanMobile,
+            linkedUserId = linkedUserId
+        )
+        opsDao.updateEmployee(updatedEmployee)
+        updatedEmployee
+    }
+
+    private suspend fun syncLegacyFlagsFromPermissions(employee: EmployeeEntity) {
+        val currentPerms = permissionDao.getPermissionsForEmployee(employee.id).associate { it.permissionKey to it.granted }
+        opsDao.updateEmployee(
+            employee.copy(
+                canManageInventory = currentPerms[AppPermission.INVENTORY_MANAGE.key] ?: employee.canManageInventory,
+                canManageSales = currentPerms[AppPermission.SALES_CREATE_COLLECT.key] ?: employee.canManageSales,
+                canManageLivestock = currentPerms[AppPermission.LIVESTOCK_CREATE_EDIT.key] ?: employee.canManageLivestock
+            )
+        )
+    }
+
+    suspend fun setEmployeePermission(
+        actorId: Long,
+        employee: EmployeeEntity,
+        permissionKey: String,
+        granted: Boolean
+    ): Result<Unit> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, employee.ownerUserId)
+        val existing = permissionDao.getPermission(employee.id, permissionKey)
+        permissionDao.upsertPermission(
+            EmployeePermissionEntity(
+                id = existing?.id ?: 0L,
+                employeeId = employee.id,
+                ownerUserId = employee.ownerUserId,
+                permissionKey = permissionKey,
+                granted = granted,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        syncLegacyFlagsFromPermissions(employee)
+    }
+
+    suspend fun setAllPermissionsForEmployee(
+        actorId: Long,
+        employee: EmployeeEntity,
+        allKeys: Collection<String>,
+        granted: Boolean
+    ): Result<Unit> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, employee.ownerUserId)
+        val existingMap = permissionDao.getPermissionsForEmployee(employee.id).associateBy { it.permissionKey }
+        val now = System.currentTimeMillis()
+        val rows = allKeys.distinct().map { key ->
+            EmployeePermissionEntity(
+                id = existingMap[key]?.id ?: 0L,
+                employeeId = employee.id,
+                ownerUserId = employee.ownerUserId,
+                permissionKey = key,
+                granted = granted,
+                updatedAt = now
+            )
+        }
+        permissionDao.upsertPermissions(rows)
+        syncLegacyFlagsFromPermissions(employee)
+    }
+
+    suspend fun applyPermissionPreset(
+        actorId: Long,
+        employee: EmployeeEntity,
+        preset: PermissionPreset,
+        allKnownKeys: Collection<String>
+    ): Result<Unit> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, employee.ownerUserId)
+        val existingMap = permissionDao.getPermissionsForEmployee(employee.id).associateBy { it.permissionKey }
+        val now = System.currentTimeMillis()
+        val combinedKeys = (allKnownKeys + AppPermission.entries.map { it.key }).distinct()
+        val rows = combinedKeys.map { key ->
+            EmployeePermissionEntity(
+                id = existingMap[key]?.id ?: 0L,
+                employeeId = employee.id,
+                ownerUserId = employee.ownerUserId,
+                permissionKey = key,
+                granted = preset.keys.contains(key),
+                updatedAt = now
+            )
+        }
+        permissionDao.upsertPermissions(rows)
+        syncLegacyFlagsFromPermissions(employee)
+    }
+
+    suspend fun setPermissionForMultipleEmployees(
+        actorId: Long,
+        ownerUserId: Long,
+        employees: List<EmployeeEntity>,
+        permissionKey: String,
+        granted: Boolean
+    ): Result<Unit> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, ownerUserId)
+        val now = System.currentTimeMillis()
+        for (emp in employees) {
+            if (emp.ownerUserId != ownerUserId) continue
+            val existing = permissionDao.getPermission(emp.id, permissionKey)
+            permissionDao.upsertPermission(
+                EmployeePermissionEntity(
+                    id = existing?.id ?: 0L,
+                    employeeId = emp.id,
+                    ownerUserId = ownerUserId,
+                    permissionKey = permissionKey,
+                    granted = granted,
+                    updatedAt = now
+                )
+            )
+            syncLegacyFlagsFromPermissions(emp)
+        }
+    }
+
+    suspend fun addCustomPermissionOption(
+        actorId: Long,
+        ownerUserId: Long,
+        titleEn: String,
+        titleBn: String,
+        descEn: String,
+        descBn: String
+    ): Result<CustomPermissionOptionEntity> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, ownerUserId)
+        val cleanTitleEn = titleEn.trim()
+        if (cleanTitleEn.isBlank()) {
+            throw IllegalArgumentException("Option title is required.")
+        }
+        val key = "CUSTOM_${System.currentTimeMillis()}_${(100..999).random()}"
+        val entity = CustomPermissionOptionEntity(
+            ownerUserId = ownerUserId,
+            permissionKey = key,
+            titleEn = cleanTitleEn,
+            titleBn = titleBn.trim().ifBlank { cleanTitleEn },
+            descriptionEn = descEn.trim(),
+            descriptionBn = descBn.trim()
+        )
+        val id = permissionDao.insertCustomOption(entity)
+        entity.copy(id = id)
+    }
+
+    suspend fun deleteCustomPermissionOption(
+        actorId: Long,
+        option: CustomPermissionOptionEntity
+    ): Result<Unit> = runCatching {
+        requireFarmAdminOrSuperAdmin(actorId, option.ownerUserId)
+        permissionDao.deletePermissionsByKey(option.permissionKey)
+        permissionDao.deleteCustomOption(option)
+    }
+
     // --- Subscriptions & Notifications ---
-    suspend fun checkExpiredSubscriptions() {
+    suspend fun checkExpiredSubscriptions(): Result<Unit> = runCatching {
         val now = System.currentTimeMillis()
         val expired = subAdminDao.findExpiredActiveSubscriptions(now)
         for (sub in expired) {
@@ -727,47 +1128,59 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         plan: SubscriptionPlanEntity,
         currencyCode: String,
         paymentMethod: String,
-        transactionRef: String
-    ) {
+        transactionRef: String,
+        actorUserId: Long? = null
+    ): Result<UserSubscriptionEntity> = runCatching {
+        requireActorPermission(actorUserId, user.id, AppPermission.SUBSCRIPTION_MANAGE)
         val now = System.currentTimeMillis()
-        val isManual = paymentMethod.contains("Manual", ignoreCase = true)
+        val settings = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val isManual = settings.requireAdminApprovalForAll ||
+            paymentMethod.contains("Bank", ignoreCase = true) ||
+            paymentMethod.contains("Manual", ignoreCase = true)
         val status = if (isManual) "PENDING" else "ACTIVE"
         val payStatus = if (isManual) PaymentStatus.PENDING.name else PaymentStatus.SUCCESSFUL.name
-        val expiry = now + plan.durationDays * 86_400_000L
+        val safeDays = plan.durationDays.coerceAtLeast(1)
+        val expiry = now + safeDays * 86_400_000L
 
-        subAdminDao.insertUserSubscription(
-            UserSubscriptionEntity(
-                userId = user.id,
-                userName = user.name,
-                planId = plan.id,
-                planName = plan.name,
-                pricePaidBdt = plan.priceBaseBdt,
-                currencyCode = currencyCode,
-                paymentMethod = paymentMethod,
-                transactionRef = transactionRef.ifBlank { "TXN-${(100000..999999).random()}" },
-                paymentStatus = payStatus,
-                startDate = now,
-                expiryDate = expiry,
-                status = status
-            )
+        if (status == "ACTIVE") {
+            subAdminDao.deactivateActiveSubscriptionsForUser(user.id, "REPLACED")
+        }
+
+        val entity = UserSubscriptionEntity(
+            userId = user.id,
+            userName = user.name,
+            planId = plan.id,
+            planName = plan.name,
+            pricePaidBdt = plan.priceBaseBdt,
+            currencyCode = currencyCode.ifBlank { "BDT" },
+            paymentMethod = paymentMethod.ifBlank { "bKash" },
+            transactionRef = transactionRef.trim().ifBlank { "TXN-${(100000..999999).random()}" },
+            paymentStatus = payStatus,
+            startDate = now,
+            expiryDate = expiry,
+            status = status
         )
+        val id = subAdminDao.insertUserSubscription(entity)
         subAdminDao.insertNotification(
             AppNotificationEntity(
                 targetUserId = user.id,
                 title = if (isManual) "Payment Verification Pending" else "Subscription Activated!",
                 message = if (isManual) "Your ${plan.name} payment via $paymentMethod is awaiting admin approval."
-                else "Your ${plan.name} is active for ${plan.durationDays} days.",
+                else "Your ${plan.name} is active for $safeDays days.",
                 category = if (isManual) "PAYMENT" else "SUBSCRIPTION"
             )
         )
+        entity.copy(id = id)
     }
 
-    suspend fun markNotificationsRead(userId: Long) {
+    suspend fun markNotificationsRead(userId: Long): Result<Unit> = runCatching {
         subAdminDao.markAllRead(userId)
     }
 
-    suspend fun submitSupportRequest(user: UserEntity, subject: String, message: String) {
-        if (subject.isBlank() || message.isBlank()) return
+    suspend fun submitSupportRequest(user: UserEntity, subject: String, message: String): Result<Unit> = runCatching {
+        if (subject.isBlank() || message.isBlank()) {
+            throw IllegalArgumentException("Subject and message are required.")
+        }
         subAdminDao.insertSupport(
             SupportRequestEntity(
                 userId = user.id,
@@ -838,6 +1251,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         subStatus: String
     ): Result<Unit> = runCatching {
         val admin = requireSuperAdmin(actorId)
+        if (paymentStatus == PaymentStatus.SUCCESSFUL && subStatus == "ACTIVE") {
+            subAdminDao.deactivateActiveSubscriptionsForUser(sub.userId, "REPLACED")
+        }
         subAdminDao.updateUserSubscription(sub.copy(paymentStatus = paymentStatus.name, status = subStatus))
         subAdminDao.insertNotification(
             AppNotificationEntity(
@@ -918,9 +1334,54 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                 actorName = admin.name,
                 action = "SETTINGS_UPDATED",
                 target = "System Settings",
-                details = "Maintenance=${settings.maintenanceMode}, DefaultCurrency=${settings.defaultCurrencyCode}"
+                details = "Maintenance=${settings.maintenanceMode}, bKash=${settings.bkashNumber}, Nagad=${settings.nagadNumber}, Bank=${settings.bankAccountNumber}"
             )
         )
+    }
+
+    suspend fun adminToggleFeatureSubscription(
+        actorId: Long,
+        featureKey: String,
+        requiresSubscription: Boolean
+    ): Result<SystemSettingsEntity> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        val current = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val updatedKeys = current.parseLockedFeatureKeys().toMutableSet()
+        if (requiresSubscription) updatedKeys.add(featureKey) else updatedKeys.remove(featureKey)
+        val updated = current.copy(subscriptionLockedFeaturesCsv = updatedKeys.joinToString(","))
+        subAdminDao.saveSystemSettings(updated)
+        val featureTitle = SubscriptionFeature.fromKey(featureKey)?.titleEn ?: featureKey
+        subAdminDao.insertAuditLog(
+            AdminAuditLogEntity(
+                actorUserId = admin.id,
+                actorName = admin.name,
+                action = if (requiresSubscription) "FEATURE_SET_SUBSCRIPTION" else "FEATURE_SET_FREE",
+                target = featureTitle,
+                details = if (requiresSubscription) "Marked as Subscription Required" else "Marked as Free for all users"
+            )
+        )
+        updated
+    }
+
+    suspend fun adminSetLockedSubscriptionFeatures(
+        actorId: Long,
+        lockedKeys: Set<String>
+    ): Result<SystemSettingsEntity> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        val current = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val validKeys = lockedKeys.filter { SubscriptionFeature.fromKey(it) != null }.toSet()
+        val updated = current.copy(subscriptionLockedFeaturesCsv = validKeys.joinToString(","))
+        subAdminDao.saveSystemSettings(updated)
+        subAdminDao.insertAuditLog(
+            AdminAuditLogEntity(
+                actorUserId = admin.id,
+                actorName = admin.name,
+                action = "FEATURE_TIERS_BULK_UPDATED",
+                target = "Subscription Features",
+                details = "${validKeys.size} modules require subscription; ${SubscriptionFeature.entries.size - validKeys.size} free"
+            )
+        )
+        updated
     }
 
     suspend fun adminResolveSupport(actorId: Long, req: SupportRequestEntity, reply: String): Result<Unit> = runCatching {

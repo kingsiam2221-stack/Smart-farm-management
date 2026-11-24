@@ -2,7 +2,6 @@ package com.example.ui.screens.farmer
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,9 +41,40 @@ fun LivestockScreen(
     onAddCategory: (String, Boolean) -> Unit,
     onSaveAnimal: (AnimalRecordEntity) -> Unit,
     onDeleteAnimal: (AnimalRecordEntity) -> Unit,
-    onRecordEvent: (AnimalRecordEntity, AnimalEventType, Int, Double, String) -> Unit
+    onRecordEvent: (AnimalRecordEntity, AnimalEventType, Int, Double, String) -> Unit,
+    onOpenSubscription: () -> Unit = {}
 ) {
     val isBn = isBangla()
+    val policy = state.accessPolicy
+    val subPolicy = state.subscriptionPolicy
+    if (!subPolicy.canAccess(SubscriptionFeature.LIVESTOCK_TRACKING)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(strings.livestock, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                FeaturePlanBadge(isFree = false, hasActiveSub = false)
+            }
+            SubscriptionRequiredLockCard(
+                feature = SubscriptionFeature.LIVESTOCK_TRACKING,
+                onOpenSubscription = onOpenSubscription,
+                canSubscribe = policy.has(AppPermission.SUBSCRIPTION_MANAGE)
+            )
+        }
+        return
+    }
+
+    val canCreateEdit = policy.has(AppPermission.LIVESTOCK_CREATE_EDIT)
+    val canHealth = policy.has(AppPermission.LIVESTOCK_HEALTH_EVENTS)
+    val canDelete = policy.has(AppPermission.LIVESTOCK_DELETE)
     var search by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var showAddAnimal by remember { mutableStateOf(false) }
@@ -66,12 +96,14 @@ fun LivestockScreen(
 
     Scaffold(
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddAnimal = true },
-                icon = { Icon(Icons.Default.Pets, contentDescription = strings.addAnimal) },
-                text = { Text(strings.addAnimal) },
-                modifier = Modifier.testTag("add_animal_fab")
-            )
+            if (canCreateEdit) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddAnimal = true },
+                    icon = { Icon(Icons.Default.Pets, contentDescription = strings.addAnimal) },
+                    text = { Text(strings.addAnimal) },
+                    modifier = Modifier.testTag("add_animal_fab")
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -87,11 +119,19 @@ fun LivestockScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(strings.livestock, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = { showCustomCategoryDialog = true }) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(tr("Custom Type", "কাস্টম ধরন"))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(strings.livestock, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        FeaturePlanBadge(
+                            isFree = subPolicy.isFree(SubscriptionFeature.LIVESTOCK_TRACKING),
+                            hasActiveSub = subPolicy.hasActiveSubscription
+                        )
+                    }
+                    if (canCreateEdit) {
+                        TextButton(onClick = { showCustomCategoryDialog = true }) {
+                            Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(tr("Custom Type", "কাস্টম ধরন"))
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -149,8 +189,8 @@ fun LivestockScreen(
                             "Add cattle, goats, poultry, ducks, quail, or custom types.",
                             "গরু, ছাগল, মুরগি, হাঁস, কোয়েল বা কাস্টম ধরন যোগ করুন।"
                         ),
-                        actionLabel = strings.addAnimal,
-                        onAction = { showAddAnimal = true }
+                        actionLabel = if (canCreateEdit) strings.addAnimal else null,
+                        onAction = if (canCreateEdit) ({ showAddAnimal = true }) else null
                     )
                 }
             } else {
@@ -222,23 +262,31 @@ fun LivestockScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilledTonalButton(
-                                    onClick = { eventTargetAnimal = animal },
-                                    modifier = Modifier.weight(1f)
+                            if (canHealth || canCreateEdit || canDelete) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.MedicalServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(tr("Log Event / Health", "ঘটনা / স্বাস্থ্য লিখুন"))
-                                }
-                                IconButton(onClick = { editingAnimal = animal }) {
-                                    Icon(Icons.Default.Edit, contentDescription = strings.edit)
-                                }
-                                IconButton(onClick = { onDeleteAnimal(animal) }) {
-                                    Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                    if (canHealth) {
+                                        FilledTonalButton(
+                                            onClick = { eventTargetAnimal = animal },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.MedicalServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(tr("Log Event / Health", "ঘটনা / স্বাস্থ্য লিখুন"))
+                                        }
+                                    }
+                                    if (canCreateEdit) {
+                                        IconButton(onClick = { editingAnimal = animal }) {
+                                            Icon(Icons.Default.Edit, contentDescription = strings.edit)
+                                        }
+                                    }
+                                    if (canDelete) {
+                                        IconButton(onClick = { onDeleteAnimal(animal) }) {
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -289,14 +337,15 @@ fun LivestockScreen(
         )
     }
 
-    if (eventTargetAnimal != null) {
+    val currentEventAnimal = eventTargetAnimal
+    if (currentEventAnimal != null) {
         AnimalEventDialog(
-            animal = eventTargetAnimal!!,
+            animal = currentEventAnimal,
             currency = currency,
             onDismiss = { eventTargetAnimal = null },
             onSave = { type, delta, cost, desc ->
                 onRecordEvent(
-                    eventTargetAnimal!!,
+                    currentEventAnimal,
                     type,
                     delta,
                     CurrencyFormatter.toBaseBdt(cost, currency),
@@ -357,14 +406,22 @@ private fun AnimalEditorDialog(
                     Text(tr("Please create a Farm first.", "অনুগ্রহ করে আগে একটি খামার তৈরি করুন।"), color = MaterialTheme.colorScheme.error)
                 } else {
                     Text(tr("Select Farm", "খামার নির্বাচন করুন"), style = MaterialTheme.typography.labelLarge)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(farms) { f ->
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farms.forEach { f ->
                             FilterChip(selected = selectedFarmId == f.id, onClick = { selectedFarmId = f.id }, label = { Text(f.name) })
                         }
                     }
                     Text(tr("Category", "ধরন"), style = MaterialTheme.typography.labelLarge)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(categories) { c ->
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        categories.forEach { c ->
                             FilterChip(
                                 selected = category == c.name,
                                 onClick = { category = c.name },
@@ -373,7 +430,7 @@ private fun AnimalEditorDialog(
                         }
                     }
                     OutlinedButton(
-                        onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        onClick = { safeLaunchImagePicker(picker) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
@@ -451,9 +508,19 @@ private fun AnimalEventDialog(
         onDismissRequest = onDismiss,
         title = { Text("${tr("Log Event", "ঘটনা লিখুন")}: ${animal.name}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(AnimalEventType.entries) { t ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AnimalEventType.entries.forEach { t ->
                         FilterChip(
                             selected = eventType == t,
                             onClick = { eventType = t },
@@ -496,9 +563,39 @@ fun EggsScreen(
     currency: CurrencyOption,
     onSelectFarm: (Long?) -> Unit,
     onRecordEggs: (Long, String, Int?, Int, Int, Int, Double) -> Unit,
-    onDeleteEgg: (EggProductionEntity) -> Unit
+    onDeleteEgg: (EggProductionEntity) -> Unit,
+    onOpenSubscription: () -> Unit = {}
 ) {
     val isBn = isBangla()
+    val policy = state.accessPolicy
+    val subPolicy = state.subscriptionPolicy
+    if (!subPolicy.canAccess(SubscriptionFeature.EGG_PRODUCTION)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(strings.eggs, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                FeaturePlanBadge(isFree = false, hasActiveSub = false)
+            }
+            SubscriptionRequiredLockCard(
+                feature = SubscriptionFeature.EGG_PRODUCTION,
+                onOpenSubscription = onOpenSubscription,
+                canSubscribe = policy.has(AppPermission.SUBSCRIPTION_MANAGE)
+            )
+        }
+        return
+    }
+
+    val canRecord = policy.has(AppPermission.EGGS_RECORD)
+    val canDelete = policy.has(AppPermission.EGGS_DELETE)
     var periodFilter by remember { mutableStateOf("All") } // Daily, Weekly, Monthly, Yearly, All
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -529,12 +626,14 @@ fun EggsScreen(
 
     Scaffold(
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddDialog = true },
-                icon = { Icon(Icons.Default.Egg, contentDescription = strings.recordEggs) },
-                text = { Text(strings.recordEggs) },
-                modifier = Modifier.testTag("record_eggs_fab")
-            )
+            if (canRecord) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    icon = { Icon(Icons.Default.Egg, contentDescription = strings.recordEggs) },
+                    text = { Text(strings.recordEggs) },
+                    modifier = Modifier.testTag("record_eggs_fab")
+                )
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -545,7 +644,17 @@ fun EggsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text(strings.eggs, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(strings.eggs, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    FeaturePlanBadge(
+                        isFree = subPolicy.isFree(SubscriptionFeature.EGG_PRODUCTION),
+                        hasActiveSub = subPolicy.hasActiveSubscription
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 FarmSwitcherBar(state.farms, state.selectedFarmId, strings.allFarms, onSelectFarm)
                 Spacer(Modifier.height(8.dp))
@@ -598,8 +707,8 @@ fun EggsScreen(
                             "Track daily Chicken, Duck, Quail, Pigeon, or Custom bird eggs.",
                             "দৈনিক মুরগি, হাঁস, কোয়েল, কবুতর বা কাস্টম ডিমের হিসাব রাখুন।"
                         ),
-                        actionLabel = strings.recordEggs,
-                        onAction = { showAddDialog = true }
+                        actionLabel = if (canRecord) strings.recordEggs else null,
+                        onAction = if (canRecord) ({ showAddDialog = true }) else null
                     )
                 }
             } else {
@@ -629,8 +738,10 @@ fun EggsScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            IconButton(onClick = { onDeleteEgg(egg) }) {
-                                Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                            if (canDelete) {
+                                IconButton(onClick = { onDeleteEgg(egg) }) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -697,13 +808,21 @@ private fun RecordEggDialog(
                 if (farms.isEmpty()) {
                     Text(tr("Create a farm first.", "আগে একটি খামার তৈরি করুন।"), color = MaterialTheme.colorScheme.error)
                 } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(farms) { f ->
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farms.forEach { f ->
                             FilterChip(selected = selectedFarmId == f.id, onClick = { selectedFarmId = f.id }, label = { Text(f.name) })
                         }
                     }
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(defaultCats) { c ->
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        defaultCats.forEach { c ->
                             FilterChip(
                                 selected = selectedCat == c,
                                 onClick = { selectedCat = c },

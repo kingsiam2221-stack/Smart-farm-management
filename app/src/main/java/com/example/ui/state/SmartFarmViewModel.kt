@@ -19,6 +19,8 @@ data class CartEntry(
 )
 
 data class FarmerDashboardState(
+    val ownerUserId: Long = 0L,
+    val accessPolicy: EmployeeAccessPolicy = EmployeeAccessPolicy(),
     val farms: List<FarmEntity> = emptyList(),
     val selectedFarmId: Long? = null, // null = All Farms
     val categories: List<AnimalCategoryEntity> = emptyList(),
@@ -34,7 +36,10 @@ data class FarmerDashboardState(
     val employees: List<EmployeeEntity> = emptyList(),
     val salaryPayments: List<SalaryPaymentEntity> = emptyList(),
     val subscriptions: List<UserSubscriptionEntity> = emptyList(),
-    val supportRequests: List<SupportRequestEntity> = emptyList()
+    val supportRequests: List<SupportRequestEntity> = emptyList(),
+    val employeePermissions: List<EmployeePermissionEntity> = emptyList(),
+    val customPermissionOptions: List<CustomPermissionOptionEntity> = emptyList(),
+    val subscriptionPolicy: SubscriptionAccessPolicy = SubscriptionAccessPolicy()
 )
 
 data class CustomerPortalState(
@@ -52,7 +57,10 @@ data class SuperAdminState(
     val expenses: List<ExpenseEntity> = emptyList(),
     val orders: List<OrderEntity> = emptyList(),
     val supportRequests: List<SupportRequestEntity> = emptyList(),
-    val auditLogs: List<AdminAuditLogEntity> = emptyList()
+    val auditLogs: List<AdminAuditLogEntity> = emptyList(),
+    val employees: List<EmployeeEntity> = emptyList(),
+    val employeePermissions: List<EmployeePermissionEntity> = emptyList(),
+    val customPermissionOptions: List<CustomPermissionOptionEntity> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -80,9 +88,35 @@ class SmartFarmViewModel(
 
     val notifications: StateFlow<List<AppNotificationEntity>> = currentUser
         .flatMapLatest { user ->
-            if (user == null) flowOf(emptyList()) else repository.observeNotifications(user.id)
+            if (user == null) flowOf(emptyList())
+            else {
+                val (ownerId, _) = repository.resolveEmployeeContext(user)
+                repository.observeNotifications(ownerId)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val employeeAccessPolicy: StateFlow<EmployeeAccessPolicy> = currentUser
+        .flatMapLatest { user ->
+            when {
+                user == null -> flowOf(EmployeeAccessPolicy())
+                user.role == UserRole.EMPLOYEE.name -> {
+                    val (_, employeeId) = repository.resolveEmployeeContext(user)
+                    if (employeeId == null) {
+                        flowOf(EmployeeAccessPolicy(isAdminOwner = false, grantedKeys = emptySet()))
+                    } else {
+                        repository.observePermissionsForEmployee(employeeId).map { list ->
+                            EmployeeAccessPolicy(
+                                isAdminOwner = false,
+                                grantedKeys = list.filter { it.granted }.map { it.permissionKey }.toSet()
+                            )
+                        }
+                    }
+                }
+                else -> flowOf(EmployeeAccessPolicy(isAdminOwner = true))
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EmployeeAccessPolicy())
 
     private val _cart = MutableStateFlow<List<CartEntry>>(emptyList())
     private val _snackbarMessage = MutableStateFlow<String?>(null)
@@ -100,18 +134,19 @@ class SmartFarmViewModel(
     val farmerState: StateFlow<FarmerDashboardState> = combine(currentUser, preferences) { user, prefs ->
         user to prefs.activeFarmId
     }.flatMapLatest { (user, activeFarmId) ->
-        if (user == null || user.role != UserRole.FARMER.name) {
+        if (user == null || (user.role != UserRole.FARMER.name && user.role != UserRole.EMPLOYEE.name)) {
             flowOf(FarmerDashboardState())
         } else {
-            val uid = user.id
+            val (ownerId, _) = repository.resolveEmployeeContext(user)
             val f1 = combine(
-                repository.observeFarms(uid),
-                repository.observeAnimalCategories(uid),
-                repository.observeAnimals(uid),
-                repository.observeAnimalEvents(uid),
-                repository.observeEggs(uid)
+                repository.observeFarms(ownerId),
+                repository.observeAnimalCategories(ownerId),
+                repository.observeAnimals(ownerId),
+                repository.observeAnimalEvents(ownerId),
+                repository.observeEggs(ownerId)
             ) { farms, cats, animals, events, eggs ->
                 FarmerDashboardState(
+                    ownerUserId = ownerId,
                     farms = farms,
                     selectedFarmId = activeFarmId,
                     categories = cats,
@@ -121,25 +156,34 @@ class SmartFarmViewModel(
                 )
             }
             val f2 = combine(
-                repository.observeInventory(uid),
-                repository.observeInventoryMovements(uid),
-                repository.observeCustomers(uid),
-                repository.observeSales(uid),
-                repository.observeFarmerOrders(uid)
+                repository.observeInventory(ownerId),
+                repository.observeInventoryMovements(ownerId),
+                repository.observeCustomers(ownerId),
+                repository.observeSales(ownerId),
+                repository.observeFarmerOrders(ownerId)
             ) { inv, moves, custs, sales, orders ->
                 Tuple5(inv, moves, custs, sales, orders)
             }
             val f3 = combine(
-                repository.observeExpenses(uid),
-                repository.observeEmployees(uid),
-                repository.observeSalaryPayments(uid),
-                repository.observeUserSubscriptions(uid),
-                repository.observeUserSupport(uid)
+                repository.observeExpenses(ownerId),
+                repository.observeEmployees(ownerId),
+                repository.observeSalaryPayments(ownerId),
+                repository.observeUserSubscriptions(ownerId),
+                repository.observeUserSupport(ownerId)
             ) { exps, emps, sals, subs, sup ->
                 Tuple5(exps, emps, sals, subs, sup)
             }
-            combine(f1, f2, f3) { base, t2, t3 ->
+            val f4 = combine(
+                repository.observePermissionsByOwner(ownerId),
+                repository.observeCustomOptionsByOwner(ownerId),
+                employeeAccessPolicy,
+                systemSettings
+            ) { perms, customOpts, policy, settings ->
+                Tuple4(perms, customOpts, policy, settings)
+            }
+            combine(f1, f2, f3, f4) { base, t2, t3, t4 ->
                 base.copy(
+                    accessPolicy = t4.c,
                     inventory = t2.a,
                     inventoryMovements = t2.b,
                     customers = t2.c,
@@ -149,7 +193,10 @@ class SmartFarmViewModel(
                     employees = t3.b,
                     salaryPayments = t3.c,
                     subscriptions = t3.d,
-                    supportRequests = t3.e
+                    supportRequests = t3.e,
+                    employeePermissions = t4.a,
+                    customPermissionOptions = t4.b,
+                    subscriptionPolicy = SubscriptionAccessPolicy.fromSettingsAndSubs(t4.d, t3.d)
                 )
             }
         }
@@ -195,7 +242,14 @@ class SmartFarmViewModel(
             ) { exps, orders, support, logs ->
                 Tuple4(exps, orders, support, logs)
             }
-            combine(g1, g2) { a, b ->
+            val g3 = combine(
+                repository.observeAllEmployeesAdmin(),
+                repository.observeAllPermissions(),
+                repository.observeAllCustomOptions()
+            ) { emps, perms, customOpts ->
+                Triple(emps, perms, customOpts)
+            }
+            combine(g1, g2, g3) { a, b, c ->
                 SuperAdminState(
                     users = a.a,
                     farms = a.b,
@@ -204,7 +258,10 @@ class SmartFarmViewModel(
                     expenses = b.a,
                     orders = b.b,
                     supportRequests = b.c,
-                    auditLogs = b.d
+                    auditLogs = b.d,
+                    employees = c.first,
+                    employeePermissions = c.second,
+                    customPermissionOptions = c.third
                 )
             }
         }
@@ -212,8 +269,13 @@ class SmartFarmViewModel(
 
     init {
         viewModelScope.launch {
-            repository.initializeDatabase()
-            _isInitialized.value = true
+            try {
+                repository.initializeDatabase()
+            } catch (_: Throwable) {
+                // Keep UI recoverable even if startup initialization encounters an issue
+            } finally {
+                _isInitialized.value = true
+            }
         }
     }
 
@@ -236,7 +298,11 @@ class SmartFarmViewModel(
             "An account with this email already exists." -> "এই ইমেইল দিয়ে আগেই অ্যাকাউন্ট তৈরি করা হয়েছে।"
             "New password must be at least 4 characters." -> "নতুন পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে।"
             "Account not found." -> "অ্যাকাউন্ট পাওয়া যায়নি।"
-            else -> raw ?: fallbackBn
+            else -> if (raw?.startsWith("Subscription required:") == true) {
+                "এই অপশনটি ব্যবহার করতে সক্রিয় সাবস্ক্রিপশন প্রয়োজন।"
+            } else {
+                raw ?: fallbackBn
+            }
         }
     }
 
@@ -320,60 +386,118 @@ class SmartFarmViewModel(
         }
     }
 
+    private fun effectiveOwnerId(): Long? {
+        val user = currentUser.value ?: return null
+        return if (user.role == UserRole.EMPLOYEE.name) {
+            farmerState.value.ownerUserId.takeIf { it > 0L } ?: user.employerOwnerId ?: user.id
+        } else user.id
+    }
+
+    private fun actorId(): Long? = currentUser.value?.id
+
+    private suspend inline fun runPermitted(crossinline block: suspend (ownerId: Long, actorId: Long) -> Unit) {
+        val ownerId = effectiveOwnerId() ?: return
+        val actorId = actorId() ?: return
+        runCatching { block(ownerId, actorId) }
+            .onFailure { err ->
+                _snackbarMessage.value = localizeError(
+                    err.message,
+                    "Action not permitted.",
+                    "এই কাজের অনুমতি নেই।"
+                )
+            }
+    }
+
     fun markNotificationsRead() {
-        val user = currentUser.value ?: return
-        viewModelScope.launch { repository.markNotificationsRead(user.id) }
+        val ownerId = effectiveOwnerId() ?: return
+        viewModelScope.launch {
+            repository.markNotificationsRead(ownerId)
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Failed to update alerts.", "সতর্কতা আপডেট করা যায়নি।") }
+        }
     }
 
     fun submitSupport(subject: String, message: String) {
         val user = currentUser.value ?: return
         viewModelScope.launch {
             repository.submitSupportRequest(user, subject, message)
-            _snackbarMessage.value = msg("Support request submitted.", "সাপোর্ট অনুরোধ পাঠানো হয়েছে।")
+                .onSuccess {
+                    _snackbarMessage.value = msg("Support request submitted.", "সাপোর্ট অনুরোধ পাঠানো হয়েছে।")
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.message ?: msg("Subject and message are required.", "বিষয় এবং বার্তা দিন।")
+                }
         }
     }
 
     // --- Farm CRUD ---
     fun saveFarm(farm: FarmEntity) {
-        val user = currentUser.value ?: return
+        val ownerId = effectiveOwnerId()
+        val actor = actorId()
+        if (ownerId == null || actor == null) {
+            _snackbarMessage.value = msg("Please sign in to save a farm.", "খামার সংরক্ষণ করতে আগে লগইন করুন।")
+            return
+        }
+        val hadNoFarms = farmerState.value.farms.isEmpty()
         viewModelScope.launch {
-            val savedId = repository.saveFarm(farm.copy(ownerUserId = user.id))
-            _snackbarMessage.value = msg("${farm.name} saved.", "${farm.name} সংরক্ষিত হয়েছে।")
-            if (preferences.value.activeFarmId == null && farmerState.value.farms.isEmpty()) {
-                prefsRepo.setActiveFarmId(savedId)
-            }
+            repository.saveFarm(farm.copy(ownerUserId = ownerId), actorUserId = actor)
+                .onSuccess { savedId ->
+                    _snackbarMessage.value = msg("${farm.name.trim()} saved.", "${farm.name.trim()} সংরক্ষিত হয়েছে।")
+                    if (preferences.value.activeFarmId == null && hadNoFarms) {
+                        prefsRepo.setActiveFarmId(savedId)
+                    }
+                }
+                .onFailure { err ->
+                    val raw = err.message
+                    _snackbarMessage.value = when {
+                        raw == "Farm name is required." -> msg("Farm name is required.", "খামারের নাম আবশ্যক।")
+                        raw == "Please sign in before creating a farm." -> msg("Please sign in before creating a farm.", "খামার তৈরি করার আগে লগইন করুন।")
+                        raw?.startsWith("Farm ID '") == true -> msg(raw, "এই খামার আইডি ইতিমধ্যেই অন্য খামারে ব্যবহৃত হয়েছে।")
+                        raw?.startsWith("Subscription required:") == true -> localizeError(raw, "Subscription required.", "সাবস্ক্রিপশন প্রয়োজন।")
+                        else -> raw ?: msg("Could not save farm.", "খামার সংরক্ষণ করা যায়নি।")
+                    }
+                }
         }
     }
 
     fun deleteFarm(farm: FarmEntity) {
+        val actor = actorId() ?: return
         viewModelScope.launch {
-            if (preferences.value.activeFarmId == farm.id) prefsRepo.setActiveFarmId(null)
-            repository.deleteFarm(farm)
-            _snackbarMessage.value = msg("${farm.name} deleted.", "${farm.name} মুছে ফেলা হয়েছে।")
+            repository.deleteFarm(farm, actorUserId = actor)
+                .onSuccess {
+                    if (preferences.value.activeFarmId == farm.id) prefsRepo.setActiveFarmId(null)
+                    _snackbarMessage.value = msg("${farm.name} deleted.", "${farm.name} মুছে ফেলা হয়েছে।")
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.message ?: msg("Permission denied.", "অনুমতি নেই।")
+                }
         }
     }
 
     // --- Livestock ---
     fun addCustomAnimalCategory(name: String, isBird: Boolean) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.addCustomAnimalCategory(uid, name, isBird)
-            _snackbarMessage.value = msg("Added category: $name", "ক্যাটাগরি যোগ হয়েছে: $name")
+            runPermitted { uid, actor ->
+                repository.addCustomAnimalCategory(uid, name, isBird, actorUserId = actor)
+                _snackbarMessage.value = msg("Added category: $name", "ক্যাটাগরি যোগ হয়েছে: $name")
+            }
         }
     }
 
     fun saveAnimalRecord(record: AnimalRecordEntity) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.saveAnimalRecord(record.copy(ownerUserId = uid))
-            _snackbarMessage.value = msg("${record.name} saved.", "${record.name} সংরক্ষিত হয়েছে।")
+            runPermitted { uid, actor ->
+                repository.saveAnimalRecord(record.copy(ownerUserId = uid), actorUserId = actor)
+                _snackbarMessage.value = msg("${record.name} saved.", "${record.name} সংরক্ষিত হয়েছে।")
+            }
         }
     }
 
     fun deleteAnimalRecord(record: AnimalRecordEntity) {
         viewModelScope.launch {
-            repository.deleteAnimalRecord(record)
-            _snackbarMessage.value = msg("${record.name} removed.", "${record.name} মুছে ফেলা হয়েছে।")
+            runPermitted { _, actor ->
+                repository.deleteAnimalRecord(record, actorUserId = actor)
+                _snackbarMessage.value = msg("${record.name} removed.", "${record.name} মুছে ফেলা হয়েছে।")
+            }
         }
     }
 
@@ -385,12 +509,14 @@ class SmartFarmViewModel(
         description: String
     ) {
         viewModelScope.launch {
-            repository.recordAnimalEvent(animal, eventType, delta, costOrValue, description)
-            val eventLabel = DomainLocalization.animalEventType(eventType, isBn())
-            _snackbarMessage.value = msg(
-                "$eventLabel recorded for ${animal.name}.",
-                "${animal.name}-এর জন্য $eventLabel সংরক্ষিত হয়েছে।"
-            )
+            runPermitted { _, actor ->
+                repository.recordAnimalEvent(animal, eventType, delta, costOrValue, description, actorUserId = actor)
+                val eventLabel = DomainLocalization.animalEventType(eventType, isBn())
+                _snackbarMessage.value = msg(
+                    "$eventLabel recorded for ${animal.name}.",
+                    "${animal.name}-এর জন্য $eventLabel সংরক্ষিত হয়েছে।"
+                )
+            }
         }
     }
 
@@ -404,39 +530,46 @@ class SmartFarmViewModel(
         sold: Int,
         unitPrice: Double
     ) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.recordEggProduction(
-                farmId = farmId,
-                ownerId = uid,
-                eggCategory = eggCategory,
-                previousStockOverride = previousStockOverride,
-                producedCount = produced,
-                brokenCount = broken,
-                soldCount = sold,
-                unitSellingPrice = unitPrice
-            )
-            val catLabel = DomainLocalization.eggCategory(eggCategory, isBn())
-            _snackbarMessage.value = msg(
-                "Egg production logged ($catLabel).",
-                "ডিম উৎপাদন সংরক্ষিত হয়েছে ($catLabel)।"
-            )
+            runPermitted { uid, actor ->
+                repository.recordEggProduction(
+                    farmId = farmId,
+                    ownerId = uid,
+                    eggCategory = eggCategory,
+                    previousStockOverride = previousStockOverride,
+                    producedCount = produced,
+                    brokenCount = broken,
+                    soldCount = sold,
+                    unitSellingPrice = unitPrice,
+                    actorUserId = actor
+                )
+                val catLabel = DomainLocalization.eggCategory(eggCategory, isBn())
+                _snackbarMessage.value = msg(
+                    "Egg production logged ($catLabel).",
+                    "ডিম উৎপাদন সংরক্ষিত হয়েছে ($catLabel)।"
+                )
+            }
         }
     }
 
     fun deleteEggRecord(record: EggProductionEntity) {
-        viewModelScope.launch { repository.deleteEggRecord(record) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteEggRecord(record, actorUserId = actor)
+            }
+        }
     }
 
     // --- Inventory ---
     fun saveInventoryItem(item: InventoryItemEntity) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.saveInventoryItem(item.copy(ownerUserId = uid))
-            _snackbarMessage.value = msg(
-                "${item.name} saved to inventory.",
-                "${item.name} ইনভেন্টরিতে সংরক্ষিত হয়েছে।"
-            )
+            runPermitted { uid, actor ->
+                repository.saveInventoryItem(item.copy(ownerUserId = uid), actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "${item.name} saved to inventory.",
+                    "${item.name} ইনভেন্টরিতে সংরক্ষিত হয়েছে।"
+                )
+            }
         }
     }
 
@@ -449,33 +582,44 @@ class SmartFarmViewModel(
         note: String
     ) {
         viewModelScope.launch {
-            repository.adjustInventoryStock(item, delta, isStockIn, unitCost, supplier, note)
-            _snackbarMessage.value = if (isStockIn) {
-                msg("Stock added to ${item.name}.", "${item.name}-এ স্টক যোগ হয়েছে।")
-            } else {
-                msg("Stock deducted from ${item.name}.", "${item.name} থেকে স্টক কমানো হয়েছে।")
+            runPermitted { _, actor ->
+                repository.adjustInventoryStock(item, delta, isStockIn, unitCost, supplier, note, actorUserId = actor)
+                _snackbarMessage.value = if (isStockIn) {
+                    msg("Stock added to ${item.name}.", "${item.name}-এ স্টক যোগ হয়েছে।")
+                } else {
+                    msg("Stock deducted from ${item.name}.", "${item.name} থেকে স্টক কমানো হয়েছে।")
+                }
             }
         }
     }
 
     fun deleteInventoryItem(item: InventoryItemEntity) {
-        viewModelScope.launch { repository.deleteInventoryItem(item) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteInventoryItem(item, actorUserId = actor)
+            }
+        }
     }
 
     // --- Sales & Customers ---
     fun saveCustomer(customer: CustomerEntity) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.saveCustomer(customer.copy(ownerUserId = uid))
-            _snackbarMessage.value = msg(
-                "Customer ${customer.name} saved.",
-                "গ্রাহক ${customer.name} সংরক্ষিত হয়েছে।"
-            )
+            runPermitted { uid, actor ->
+                repository.saveCustomer(customer.copy(ownerUserId = uid), actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "Customer ${customer.name} saved.",
+                    "গ্রাহক ${customer.name} সংরক্ষিত হয়েছে।"
+                )
+            }
         }
     }
 
     fun deleteCustomer(customer: CustomerEntity) {
-        viewModelScope.launch { repository.deleteCustomer(customer) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteCustomer(customer, actorUserId = actor)
+            }
+        }
     }
 
     fun createSale(
@@ -493,111 +637,269 @@ class SmartFarmViewModel(
         paidAmount: Double,
         paymentMethod: String
     ) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            val sale = repository.createSale(
-                farmId, uid, customerId, customerName, customerPhone,
-                productCategory, productName, inventoryItem, animalRecord,
-                quantity, unitPrice, discount, paidAmount, paymentMethod
-            )
-            _snackbarMessage.value = msg(
-                "Sale recorded (${sale.invoiceNumber}).",
-                "বিক্রয় সংরক্ষিত হয়েছে (${sale.invoiceNumber})।"
-            )
+            runPermitted { uid, actor ->
+                val sale = repository.createSale(
+                    farmId, uid, customerId, customerName, customerPhone,
+                    productCategory, productName, inventoryItem, animalRecord,
+                    quantity, unitPrice, discount, paidAmount, paymentMethod,
+                    actorUserId = actor
+                )
+                _snackbarMessage.value = msg(
+                    "Sale recorded (${sale.invoiceNumber}).",
+                    "বিক্রয় সংরক্ষিত হয়েছে (${sale.invoiceNumber})।"
+                )
+            }
         }
     }
 
     fun settleSaleDue(sale: SaleEntity, amount: Double) {
         viewModelScope.launch {
-            repository.settleSaleDue(sale, amount)
-            _snackbarMessage.value = msg(
-                "Payment recorded on ${sale.invoiceNumber}.",
-                "${sale.invoiceNumber} এর বকেয়া পরিশোধিত হয়েছে।"
-            )
+            runPermitted { _, actor ->
+                repository.settleSaleDue(sale, amount, actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "Payment recorded on ${sale.invoiceNumber}.",
+                    "${sale.invoiceNumber} এর বকেয়া পরিশোধিত হয়েছে।"
+                )
+            }
         }
     }
 
     fun deleteSale(sale: SaleEntity) {
-        viewModelScope.launch { repository.deleteSale(sale) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteSale(sale, actorUserId = actor)
+            }
+        }
     }
 
     fun updateOrderStatus(order: OrderEntity, status: OrderStatus) {
         viewModelScope.launch {
-            repository.updateOrderStatus(order, status)
-            _snackbarMessage.value = msg(
-                "Order ${order.orderNumber} marked ${status.label}.",
-                "অর্ডার ${order.orderNumber} আপডেট হয়েছে।"
-            )
+            runPermitted { _, actor ->
+                repository.updateOrderStatus(order, status, actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "Order ${order.orderNumber} marked ${status.label}.",
+                    "অর্ডার ${order.orderNumber} আপডেট হয়েছে।"
+                )
+            }
         }
     }
 
     // --- Expenses & Employees ---
     fun addExpense(farmId: Long, category: String, amount: Double, description: String) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.addExpense(
-                ExpenseEntity(
-                    farmId = farmId,
-                    ownerUserId = uid,
-                    category = category,
-                    amount = amount,
-                    description = description
+            runPermitted { uid, actor ->
+                repository.addExpense(
+                    ExpenseEntity(
+                        farmId = farmId,
+                        ownerUserId = uid,
+                        category = category,
+                        amount = amount,
+                        description = description
+                    ),
+                    actorUserId = actor
                 )
-            )
-            val catLabel = DomainLocalization.expenseCategory(category, isBn())
-            _snackbarMessage.value = msg("Expense added ($catLabel).", "খরচ যোগ হয়েছে ($catLabel)।")
+                val catLabel = DomainLocalization.expenseCategory(category, isBn())
+                _snackbarMessage.value = msg("Expense added ($catLabel).", "খরচ যোগ হয়েছে ($catLabel)।")
+            }
         }
     }
 
     fun deleteExpense(expense: ExpenseEntity) {
-        viewModelScope.launch { repository.deleteExpense(expense) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteExpense(expense, actorUserId = actor)
+            }
+        }
     }
 
     fun saveEmployee(emp: EmployeeEntity) {
-        val uid = currentUser.value?.id ?: return
         viewModelScope.launch {
-            repository.saveEmployee(emp.copy(ownerUserId = uid))
-            _snackbarMessage.value = msg(
-                "Employee ${emp.name} saved.",
-                "কর্মচারী ${emp.name} সংরক্ষিত হয়েছে।"
-            )
+            runPermitted { uid, actor ->
+                repository.saveEmployee(emp.copy(ownerUserId = uid), actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "Employee ${emp.name} saved.",
+                    "কর্মচারী ${emp.name} সংরক্ষিত হয়েছে।"
+                )
+            }
         }
     }
 
     fun deleteEmployee(emp: EmployeeEntity) {
-        viewModelScope.launch { repository.deleteEmployee(emp) }
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteEmployee(emp, actorUserId = actor)
+            }
+        }
     }
 
     fun markAttendance(emp: EmployeeEntity, status: AttendanceStatus) {
         viewModelScope.launch {
-            repository.markEmployeeAttendance(emp, status)
-            val stLabel = DomainLocalization.attendanceStatus(status, isBn())
-            _snackbarMessage.value = msg(
-                "${emp.name} marked $stLabel.",
-                "${emp.name} কে '$stLabel' চিহ্নিত করা হয়েছে।"
-            )
+            runPermitted { _, actor ->
+                repository.markEmployeeAttendance(emp, status, actorUserId = actor)
+                val stLabel = DomainLocalization.attendanceStatus(status, isBn())
+                _snackbarMessage.value = msg(
+                    "${emp.name} marked $stLabel.",
+                    "${emp.name} কে '$stLabel' চিহ্নিত করা হয়েছে।"
+                )
+            }
         }
     }
 
     fun paySalary(emp: EmployeeEntity, amount: Double, monthLabel: String, note: String) {
         viewModelScope.launch {
-            repository.payEmployeeSalary(emp, amount, monthLabel, note)
-            _snackbarMessage.value = msg(
-                "Salary paid to ${emp.name}.",
-                "${emp.name} কে বেতন প্রদান করা হয়েছে।"
-            )
+            runPermitted { _, actor ->
+                repository.payEmployeeSalary(emp, amount, monthLabel, note, actorUserId = actor)
+                _snackbarMessage.value = msg(
+                    "Salary paid to ${emp.name}.",
+                    "${emp.name} কে বেতন প্রদান করা হয়েছে।"
+                )
+            }
+        }
+    }
+
+    // --- Admin-Only User Permissions Management ---
+    fun setEmployeePermission(employee: EmployeeEntity, permissionKey: String, granted: Boolean) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.setEmployeePermission(actor, employee, permissionKey, granted)
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun setAllPermissionsForEmployee(employee: EmployeeEntity, granted: Boolean) {
+        val actor = actorId() ?: return
+        val customOpts = if (currentUser.value?.role == UserRole.SUPER_ADMIN.name) {
+            adminState.value.customPermissionOptions.filter { it.ownerUserId == employee.ownerUserId }
+        } else {
+            farmerState.value.customPermissionOptions
+        }
+        val keys = PermissionCatalog.allDescriptors(customOpts).map { it.key }
+        viewModelScope.launch {
+            repository.setAllPermissionsForEmployee(actor, employee, keys, granted)
+                .onSuccess {
+                    _snackbarMessage.value = if (granted) {
+                        msg("All permissions granted to ${employee.name}.", "${employee.name} কে সকল অনুমতি দেওয়া হয়েছে।")
+                    } else {
+                        msg("All permissions revoked for ${employee.name}.", "${employee.name}-এর সকল অনুমতি বাতিল করা হয়েছে।")
+                    }
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun applyPermissionPreset(employee: EmployeeEntity, preset: PermissionPreset) {
+        val actor = actorId() ?: return
+        val customOpts = if (currentUser.value?.role == UserRole.SUPER_ADMIN.name) {
+            adminState.value.customPermissionOptions.filter { it.ownerUserId == employee.ownerUserId }
+        } else {
+            farmerState.value.customPermissionOptions
+        }
+        val allKeys = PermissionCatalog.allDescriptors(customOpts).map { it.key }
+        viewModelScope.launch {
+            repository.applyPermissionPreset(actor, employee, preset, allKeys)
+                .onSuccess {
+                    val label = if (isBn()) preset.labelBn else preset.labelEn
+                    _snackbarMessage.value = msg(
+                        "Applied '$label' to ${employee.name}.",
+                        "${employee.name}-এর জন্য '$label' প্রয়োগ করা হয়েছে।"
+                    )
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun setPermissionForMultipleEmployees(
+        ownerUserId: Long,
+        employees: List<EmployeeEntity>,
+        permissionKey: String,
+        granted: Boolean
+    ) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.setPermissionForMultipleEmployees(actor, ownerUserId, employees, permissionKey, granted)
+                .onSuccess {
+                    _snackbarMessage.value = if (granted) {
+                        msg("Granted to ${employees.size} employees.", "${employees.size} জন কর্মচারীকে অনুমতি দেওয়া হয়েছে।")
+                    } else {
+                        msg("Revoked for ${employees.size} employees.", "${employees.size} জন কর্মচারীর অনুমতি বাতিল করা হয়েছে।")
+                    }
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun addCustomPermissionOption(
+        ownerUserId: Long,
+        titleEn: String,
+        titleBn: String,
+        descEn: String,
+        descBn: String
+    ) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.addCustomPermissionOption(actor, ownerUserId, titleEn, titleBn, descEn, descBn)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Added permission option: ${it.titleEn}",
+                        "নতুন অনুমতি অপশন যোগ হয়েছে: ${it.titleBn}"
+                    )
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun deleteCustomPermissionOption(option: CustomPermissionOptionEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteCustomPermissionOption(actor, option)
+                .onSuccess {
+                    _snackbarMessage.value = msg("Option removed.", "অপশন মুছে ফেলা হয়েছে।")
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun provisionEmployeeLogin(
+        employee: EmployeeEntity,
+        email: String,
+        mobile: String,
+        password: String,
+        onDone: () -> Unit = {}
+    ) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.provisionEmployeeLogin(actor, employee, email, mobile, password)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Login ready for ${employee.name} (${it.email}).",
+                        "${employee.name}-এর লগইন সংরক্ষিত হয়েছে (${it.email})।"
+                    )
+                    onDone()
+                }
+                .onFailure { _snackbarMessage.value = localizeError(it.message, "Could not save employee login.", "কর্মচারীর লগইন সংরক্ষণ করা যায়নি।") }
         }
     }
 
     // --- Subscriptions ---
     fun subscribe(plan: SubscriptionPlanEntity, currencyCode: String, method: String, txRef: String) {
         val user = currentUser.value ?: return
+        val ownerId = effectiveOwnerId() ?: user.id
         viewModelScope.launch {
-            repository.purchaseSubscription(user, plan, currencyCode, method, txRef)
-            _snackbarMessage.value = msg(
-                "Subscription processed for ${plan.name}.",
-                "${plan.name} সাবস্ক্রিপশন প্রক্রিয়া সম্পন্ন হয়েছে।"
-            )
+            val ownerUser = if (ownerId == user.id) user else user.copy(id = ownerId)
+            repository.purchaseSubscription(ownerUser, plan, currencyCode, method, txRef, actorUserId = user.id)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Subscription processed for ${plan.name}.",
+                        "${plan.name} সাবস্ক্রিপশন প্রক্রিয়া সম্পন্ন হয়েছে।"
+                    )
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = err.message ?: msg(
+                        "Could not process subscription.",
+                        "সাবস্ক্রিপশন সম্পন্ন করা যায়নি।"
+                    )
+                }
         }
     }
 
@@ -744,7 +1046,37 @@ class SmartFarmViewModel(
         val adminId = currentUser.value?.id ?: return
         viewModelScope.launch {
             repository.adminUpdateSettings(adminId, settings)
-                .onSuccess { _snackbarMessage.value = msg("System settings saved.", "সিস্টেম সেটিংস সংরক্ষিত হয়েছে।") }
+                .onSuccess { _snackbarMessage.value = msg("System & payment settings saved.", "সিস্টেম ও পেমেন্ট সেটিংস সংরক্ষিত হয়েছে।") }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun adminToggleFeatureSubscription(feature: SubscriptionFeature, requiresSubscription: Boolean) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminToggleFeatureSubscription(adminId, feature.key, requiresSubscription)
+                .onSuccess {
+                    val label = if (isBn()) feature.titleBn else feature.titleEn
+                    _snackbarMessage.value = if (requiresSubscription) {
+                        msg("$label now requires Subscription.", "$label এখন সাবস্ক্রিপশন প্রয়োজন।")
+                    } else {
+                        msg("$label is now Free.", "$label এখন ফ্রি করা হয়েছে।")
+                    }
+                }
+                .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun adminSetAllFeatureSubscriptions(lockedKeys: Set<String>) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminSetLockedSubscriptionFeatures(adminId, lockedKeys)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Updated Free vs Subscription feature tiers.",
+                        "ফ্রি ও সাবস্ক্রিপশন ফিচার তালিকা আপডেট হয়েছে।"
+                    )
+                }
                 .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
         }
     }

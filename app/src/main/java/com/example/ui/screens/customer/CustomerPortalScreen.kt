@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +38,11 @@ import com.example.i18n.isBangla
 import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.LanguageCurrencyDialog
+import com.example.ui.components.ThemeModeSelectorRow
 import com.example.ui.components.formatShortDate
+import com.example.ui.components.nextThemeModeOverride
+import com.example.ui.components.themeModeIcon
+import com.example.ui.components.themeModeLabel
 import com.example.ui.state.CustomerPortalState
 
 @Composable
@@ -119,9 +124,11 @@ fun CustomerPortalScreen(
                             strings = strings,
                             currentLanguage = currentLanguage,
                             currency = currentCurrency,
+                            darkModeOverride = darkModeOverride,
                             onToggleLanguage = {
                                 onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
                             },
+                            onSelectDarkMode = onSelectDarkMode,
                             onAddToCart = onAddToCart
                         )
                         1 -> CartCheckoutTab(state, strings, currentCurrency, onUpdateCartQty) { addr, method ->
@@ -145,7 +152,9 @@ private fun ShopCatalogTab(
     strings: AppStrings,
     currentLanguage: AppLanguage,
     currency: CurrencyOption,
+    darkModeOverride: Boolean?,
     onToggleLanguage: () -> Unit,
+    onSelectDarkMode: (Boolean?) -> Unit,
     onAddToCart: (InventoryItemEntity) -> Unit
 ) {
     val isBn = isBangla()
@@ -178,22 +187,38 @@ private fun ShopCatalogTab(
                         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color(0xFF0E3E16).copy(alpha = 0.88f)))
                     )
                 )
-                AssistChip(
-                    onClick = onToggleLanguage,
-                    label = {
-                        Text(
-                            if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
-                            fontWeight = FontWeight.Bold
+                Row(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AssistChip(
+                        onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
+                        label = { Text(themeModeLabel(darkModeOverride), fontWeight = FontWeight.SemiBold) },
+                        leadingIcon = { Icon(themeModeIcon(darkModeOverride), contentDescription = strings.themeMode, modifier = Modifier.size(16.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color.White.copy(alpha = 0.92f),
+                            labelColor = Color(0xFF0E3E16),
+                            leadingIconContentColor = Color(0xFF0E3E16)
+                        ),
+                        modifier = Modifier.testTag("customer_theme_toggle")
+                    )
+                    AssistChip(
+                        onClick = onToggleLanguage,
+                        label = {
+                            Text(
+                                if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Default.Translate, contentDescription = strings.language, modifier = Modifier.size(16.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = Color.White.copy(alpha = 0.92f),
+                            labelColor = Color(0xFF0E3E16),
+                            leadingIconContentColor = Color(0xFF0E3E16)
                         )
-                    },
-                    leadingIcon = { Icon(Icons.Default.Translate, contentDescription = strings.language, modifier = Modifier.size(16.dp)) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = Color.White.copy(alpha = 0.92f),
-                        labelColor = Color(0xFF0E3E16),
-                        leadingIconContentColor = Color(0xFF0E3E16)
-                    ),
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
-                )
+                    )
+                }
                 Column(modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                     Text(
                         tr("Farm-to-Table Marketplace", "খামার থেকে সরাসরি বাজার"),
@@ -490,12 +515,23 @@ private fun CustomerProfileTab(
                             Box(contentAlignment = Alignment.Center) { Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
                         }
                     }
-                    OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                    OutlinedButton(onClick = { com.example.ui.components.safeLaunchImagePicker(picker) }) {
                         Text(tr("Change Photo", "ছবি পরিবর্তন করুন"))
                     }
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Name", "নাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile", "মোবাইল নম্বর")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(onClick = { onUpdateProfile(name, mobile, imageUri) }, modifier = Modifier.fillMaxWidth()) { Text(strings.save) }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        tr("Theme Mode", "থিম মোড"),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.Start)
+                    )
+                    ThemeModeSelectorRow(
+                        darkModeOverride = darkModeOverride,
+                        onSelectDarkMode = onSelectDarkMode
+                    )
                     FilledTonalButton(onClick = { showSettings = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Language, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
