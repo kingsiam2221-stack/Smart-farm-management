@@ -41,6 +41,7 @@ import com.example.i18n.AppLanguage
 import com.example.i18n.CurrencyOption
 import com.example.i18n.LocalAppLanguage
 import com.example.i18n.Localization
+import com.example.ui.components.AppSettingsScreen
 import com.example.ui.screens.admin.SuperAdminDashboardScreen
 import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.customer.CustomerPortalScreen
@@ -117,8 +118,14 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.fillMaxSize().padding(outerPadding)) {
                             val context = LocalContext.current
                             val coroutineScope = rememberCoroutineScope()
-                            val firebaseUser by Firebase.auth.authStateFlow().collectAsStateWithLifecycle(
-                                initialValue = Firebase.auth.currentUser
+                            val firebaseAuth = remember { runCatching { Firebase.auth }.getOrNull() }
+                            val firebaseReady = remember {
+                                runCatching { com.google.firebase.FirebaseApp.getApps(context).isNotEmpty() }.getOrDefault(false)
+                            }
+                            val firebaseUser by remember(firebaseAuth) {
+                                firebaseAuth?.authStateFlow() ?: kotlinx.coroutines.flow.flowOf(null)
+                            }.collectAsStateWithLifecycle(
+                                initialValue = runCatching { firebaseAuth?.currentUser }.getOrNull()
                             )
                             val handleLogout: () -> Unit = {
                                 signOutGoogle(context, coroutineScope) {
@@ -139,6 +146,7 @@ class MainActivity : ComponentActivity() {
                                     authError = authError,
                                     onClearError = viewModel::clearAuthError,
                                     onLogin = viewModel::login,
+                                    onAdminLogin = viewModel::loginSuperAdmin,
                                     onRegister = viewModel::register,
                                     onResetPassword = viewModel::resetPassword,
                                     onGoogleSignInSuccess = { fbUser, role ->
@@ -155,7 +163,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             } else {
                                 val fbUid = firebaseUser?.uid
-                                if (!fbUid.isNullOrBlank()) {
+                                if (firebaseReady && !fbUid.isNullOrBlank()) {
                                     key(fbUid) {
                                         CloudSyncSidecar(
                                             currentUserId = fbUid,
@@ -198,6 +206,12 @@ class MainActivity : ComponentActivity() {
                                             onSelectLanguage = viewModel::setLanguage,
                                             onSelectCurrency = viewModel::setCurrency,
                                             onSelectDarkMode = viewModel::setDarkMode,
+                                            onDeleteUser = viewModel::adminDeleteUserCompletely,
+                                            onDeleteShopProduct = viewModel::adminDeleteOnlineShopProduct,
+                                            onDeleteProductAd = viewModel::adminDeleteProductAd,
+                                            onChangeAdminCredentials = viewModel::adminChangeCredentials,
+                                            onUpdateProfile = viewModel::updateProfile,
+                                            onMessage = viewModel::showMessage,
                                             onLogout = handleLogout
                                         )
                                     }
@@ -207,6 +221,7 @@ class MainActivity : ComponentActivity() {
                                         CustomerPortalScreen(
                                             user = activeUser,
                                             state = customerState,
+                                            systemSettings = settings,
                                             notifications = notifications,
                                             strings = strings,
                                             currentLanguage = language,
@@ -218,12 +233,14 @@ class MainActivity : ComponentActivity() {
                                             onRequestCancelOrder = viewModel::requestOrderCancellation,
                                             onMarkNotificationsRead = viewModel::markNotificationsRead,
                                             onUpdateProfile = viewModel::updateProfile,
+                                            onSubmitSupport = viewModel::submitSupport,
                                             onSearchChange = viewModel::updateMarketplaceSearch,
                                             onSelectCategory = viewModel::selectMarketplaceCategory,
                                             onLoadMore = viewModel::loadMoreMarketplaceItems,
                                             onSelectLanguage = viewModel::setLanguage,
                                             onSelectCurrency = viewModel::setCurrency,
                                             onSelectDarkMode = viewModel::setDarkMode,
+                                            onMessage = viewModel::showMessage,
                                             onLogout = handleLogout
                                         )
                                     }
@@ -256,7 +273,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class FarmerSection {
-    DASHBOARD, FARMS, AGRICULTURE, ONLINE_PRODUCTS, AI_AD_STUDIO, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE
+    DASHBOARD, FARMS, AGRICULTURE, ONLINE_PRODUCTS, AI_AD_STUDIO, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE, SETTINGS
 }
 
 private data class NavEntry(
@@ -289,7 +306,9 @@ private fun isSectionPermitted(sec: FarmerSection, policy: EmployeeAccessPolicy)
     FarmerSection.PERMISSIONS ->
         policy.canManagePermissions()
     FarmerSection.MORE ->
-        true // Always visible so users can access Profile & Log Out
+        true // Houses reports, subscriptions, notifications, and overflow modules
+    FarmerSection.SETTINGS ->
+        true // Dedicated Settings destination (Profile, Language/Currency/Theme, Help & Developer Contact, Log Out)
 }
 
 @Composable
@@ -492,7 +511,8 @@ private fun FarmerShell(
             NavEntry(FarmerSection.COMMERCE, strings.commerce, Icons.Default.PointOfSale),
             NavEntry(FarmerSection.GUIDE, strings.farmGuide, Icons.AutoMirrored.Filled.MenuBook),
             NavEntry(FarmerSection.PERMISSIONS, strings.permissions, Icons.Default.AdminPanelSettings),
-            NavEntry(FarmerSection.MORE, strings.more, Icons.Default.Tune)
+            NavEntry(FarmerSection.MORE, strings.more, Icons.Default.Tune),
+            NavEntry(FarmerSection.SETTINGS, strings.settings, Icons.Default.Settings)
         )
     }
     val permittedEntries = remember(allEntries, policy) {
@@ -526,19 +546,26 @@ private fun FarmerShell(
         val isWide = maxWidth >= 600.dp
 
         val mobileBarEntries = remember(permittedEntries) {
-            val nonMore = permittedEntries.filter { it.section != FarmerSection.MORE }
-            if (nonMore.size <= 4) {
+            if (permittedEntries.size <= 5) {
                 permittedEntries
             } else {
-                // Up to 4 primary items + More (which houses remaining permitted sections via quick pills)
-                val primary = nonMore.take(4)
+                // Keep up to 3 primary sections + dedicated More + dedicated Settings (max 5 items)
+                val nonMoreOrSettings = permittedEntries.filter {
+                    it.section != FarmerSection.MORE && it.section != FarmerSection.SETTINGS
+                }
+                val primary = nonMoreOrSettings.take(3)
                 val moreEntry = permittedEntries.firstOrNull { it.section == FarmerSection.MORE }
-                if (moreEntry != null) primary + moreEntry else primary
+                val settingsEntry = permittedEntries.firstOrNull { it.section == FarmerSection.SETTINGS }
+                primary + listOfNotNull(moreEntry, settingsEntry)
             }
         }
         val mobileBarSections = remember(mobileBarEntries) { mobileBarEntries.map { it.section }.toSet() }
         val overflowMobileEntries = remember(permittedEntries, mobileBarSections) {
-            permittedEntries.filter { it.section != FarmerSection.MORE && it.section !in mobileBarSections }
+            permittedEntries.filter {
+                it.section != FarmerSection.MORE &&
+                    it.section != FarmerSection.SETTINGS &&
+                    it.section !in mobileBarSections
+            }
         }
 
         Scaffold(
@@ -548,7 +575,9 @@ private fun FarmerShell(
                     NavigationBar {
                         mobileBarEntries.forEach { entry ->
                             val isSelected = section == entry.section ||
-                                (entry.section == FarmerSection.MORE && section !in mobileBarSections)
+                                (entry.section == FarmerSection.MORE &&
+                                    section !in mobileBarSections &&
+                                    section != FarmerSection.SETTINGS)
                             NavigationBarItem(
                                 selected = isSelected,
                                 onClick = {
@@ -557,6 +586,7 @@ private fun FarmerShell(
                                     if (entry.section == FarmerSection.COMMERCE) commerceInitialTab = CommerceTab.SALES
                                     section = entry.section
                                 },
+                                modifier = if (entry.section == FarmerSection.SETTINGS) Modifier.testTag("nav_settings") else Modifier,
                                 icon = {
                                     BadgedBox(badge = { if (entry.section == FarmerSection.MORE && unreadCount > 0) Badge { Text("$unreadCount") } }) {
                                         Icon(entry.icon, contentDescription = entry.label)
@@ -581,6 +611,7 @@ private fun FarmerShell(
                                     if (entry.section == FarmerSection.COMMERCE) commerceInitialTab = CommerceTab.SALES
                                     section = entry.section
                                 },
+                                modifier = if (entry.section == FarmerSection.SETTINGS) Modifier.testTag("nav_settings") else Modifier,
                                 icon = {
                                     BadgedBox(badge = { if (entry.section == FarmerSection.MORE && unreadCount > 0) Badge { Text("$unreadCount") } }) {
                                         Icon(entry.icon, contentDescription = entry.label)
@@ -597,6 +628,7 @@ private fun FarmerShell(
                     if (!isWide && (section == FarmerSection.MORE || section !in mobileBarSections) && overflowMobileEntries.isNotEmpty()) {
                         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), modifier = Modifier.fillMaxWidth()) {
                             LazyRow(
+                                modifier = Modifier.testTag("farmer_overflow_chips_row"),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -613,7 +645,7 @@ private fun FarmerShell(
                                                 FarmerSection.GUIDE -> Modifier.testTag("mobile_guide_chip")
                                                 FarmerSection.PERMISSIONS -> Modifier.testTag("mobile_permissions_chip")
                                                 FarmerSection.ONLINE_PRODUCTS -> Modifier.testTag("mobile_online_products_chip")
-                                                else -> Modifier
+                                                else -> Modifier.testTag("mobile_${entry.section.name.lowercase()}_chip")
                                             }
                                         )
                                     }
@@ -625,7 +657,7 @@ private fun FarmerShell(
                                         label = {
                                             Text(
                                                 if (policy.has(AppPermission.REPORTS_VIEW_EXPORT)) strings.reports
-                                                else strings.profile
+                                                else strings.more
                                             )
                                         },
                                         leadingIcon = { Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(16.dp)) }
@@ -704,16 +736,7 @@ private fun FarmerShell(
                                 onOpenPermissions = { section = FarmerSection.PERMISSIONS },
                                 onOpenAiAdvisor = openAiIfAllowed,
                                 onOpenAiAdStudio = { section = FarmerSection.AI_AD_STUDIO },
-                                onToggleLanguage = {
-                                    if (policy.has(AppPermission.PROFILE_APPEARANCE)) {
-                                        viewModel.setLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
-                                    }
-                                },
-                                onSelectDarkMode = { mode ->
-                                    if (policy.has(AppPermission.PROFILE_APPEARANCE)) {
-                                        viewModel.setDarkMode(mode)
-                                    }
-                                }
+                                onOpenSettings = { section = FarmerSection.SETTINGS }
                             )
 
                             FarmerSection.FARMS -> FarmsScreen(
@@ -862,27 +885,40 @@ private fun FarmerShell(
                             )
 
                             FarmerSection.MORE -> ReportsSubscriptionProfileScreen(
-                                user = user,
                                 state = farmerState,
                                 plans = plans,
                                 systemSettings = systemSettings,
                                 notifications = notifications,
                                 strings = strings,
+                                currentCurrency = currentCurrency,
+                                initialTab = moreInitialTab,
+                                onSubscribe = viewModel::subscribe,
+                                onMarkNotificationsRead = viewModel::markNotificationsRead,
+                                onSubmitSupport = viewModel::submitSupport,
+                                onOpenSettings = { section = FarmerSection.SETTINGS },
+                                onMessage = viewModel::showMessage
+                            )
+
+                            FarmerSection.SETTINGS -> AppSettingsScreen(
+                                user = user,
+                                systemSettings = systemSettings,
+                                strings = strings,
                                 currentLanguage = currentLanguage,
                                 currentCurrency = currentCurrency,
                                 darkModeOverride = darkModeOverride,
+                                canEditAppearance = policy.has(AppPermission.PROFILE_APPEARANCE),
+                                showLabelCustomization = policy.has(AppPermission.PROFILE_APPEARANCE),
                                 languageOverrides = languageOverrides,
-                                initialTab = moreInitialTab,
+                                supportRequests = farmerState.supportRequests,
+                                employeeEmptyPermissionsHint = !policy.isAdminOwner && policy.grantedKeys.isEmpty(),
                                 onSelectLanguage = viewModel::setLanguage,
                                 onSelectCurrency = viewModel::setCurrency,
                                 onSelectDarkMode = viewModel::setDarkMode,
                                 onSetLanguageOverride = viewModel::setLanguageOverride,
                                 onUpdateProfile = viewModel::updateProfile,
-                                onSubscribe = viewModel::subscribe,
-                                onMarkNotificationsRead = viewModel::markNotificationsRead,
                                 onSubmitSupport = viewModel::submitSupport,
-                                onLogout = onLogout,
-                                onMessage = viewModel::showMessage
+                                onMessage = viewModel::showMessage,
+                                onLogout = onLogout
                             )
                         }
                     }

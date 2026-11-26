@@ -11,6 +11,7 @@ import com.example.data.local.*
 import com.example.data.repository.FarmRepository
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.util.DeveloperContactHelper
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -620,7 +621,9 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_2_3,
                 SmartFarmDatabase.MIGRATION_3_4,
                 SmartFarmDatabase.MIGRATION_4_5,
-                SmartFarmDatabase.MIGRATION_5_6
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
             )
             .allowMainThreadQueries()
             .build()
@@ -811,7 +814,9 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_2_3,
                 SmartFarmDatabase.MIGRATION_3_4,
                 SmartFarmDatabase.MIGRATION_4_5,
-                SmartFarmDatabase.MIGRATION_5_6
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
             )
             .allowMainThreadQueries()
             .build()
@@ -1065,7 +1070,9 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_2_3,
                 SmartFarmDatabase.MIGRATION_3_4,
                 SmartFarmDatabase.MIGRATION_4_5,
-                SmartFarmDatabase.MIGRATION_5_6
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
             )
             .allowMainThreadQueries()
             .build()
@@ -1452,7 +1459,9 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_2_3,
                 SmartFarmDatabase.MIGRATION_3_4,
                 SmartFarmDatabase.MIGRATION_4_5,
-                SmartFarmDatabase.MIGRATION_5_6
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
             )
             .allowMainThreadQueries()
             .build()
@@ -1602,7 +1611,9 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_2_3,
                 SmartFarmDatabase.MIGRATION_3_4,
                 SmartFarmDatabase.MIGRATION_4_5,
-                SmartFarmDatabase.MIGRATION_5_6
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
             )
             .allowMainThreadQueries()
             .build()
@@ -1700,5 +1711,312 @@ class SmartFarmBusinessLogicTest {
         } finally {
             dummyMp4.delete()
         }
+    }
+
+    @Test
+    fun roomMigration_v6ToV7_preservesSettingsAndAddsDeveloperContactColumns() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v6_v7_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(6) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        SmartFarmDatabase.MIGRATION_5_6.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (1, 'System Admin', '01700000000', 'admin@smartfarm.app', '${PasswordHasher.hash("admin@2026")}', 'SUPER_ADMIN', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                        db.execSQL("INSERT INTO system_settings (id, announcementBanner, maintenanceMode, defaultCurrencyCode, allowManualPayments) VALUES (1, 'v6 notice', 0, 'BDT', 1)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val settings = migratedRepo.observeSystemSettings().first()!!
+            assertEquals("v6 notice", settings.announcementBanner)
+            assertEquals("+8801700000000", settings.developerPhone)
+            assertEquals("+8801700000000", settings.developerWhatsApp)
+            assertEquals("", settings.adminPinHash)
+
+            val admin = migratedRepo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+            migratedRepo.adminUpdateSettings(
+                admin.id,
+                settings.copy(
+                    developerName = "Smart Farm Support",
+                    developerPhone = "01712-345678",
+                    developerWhatsApp = "01712-345678",
+                    developerEmail = "dev@smartfarm.app"
+                )
+            ).getOrThrow()
+
+            val updated = migratedRepo.observeSystemSettings().first()!!
+            assertEquals("Smart Farm Support", updated.developerName)
+            assertEquals("01712-345678", updated.developerPhone)
+            assertEquals("01712-345678", updated.developerWhatsApp)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun roomMigration_v7ToV8_handlesLegacyV7WithoutAdminPinHashAndPreservesSettings() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v7_v8_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(7) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        SmartFarmDatabase.MIGRATION_5_6.migrate(db)
+                        // Simulate early v7 DB created BEFORE adminPinHash was added to SystemSettingsEntity
+                        db.execSQL("ALTER TABLE `system_settings` ADD COLUMN developerName TEXT NOT NULL DEFAULT 'Smart Farm Support Team'")
+                        db.execSQL("ALTER TABLE `system_settings` ADD COLUMN developerPhone TEXT NOT NULL DEFAULT '+8801700000000'")
+                        db.execSQL("ALTER TABLE `system_settings` ADD COLUMN developerWhatsApp TEXT NOT NULL DEFAULT '+8801700000000'")
+                        db.execSQL("ALTER TABLE `system_settings` ADD COLUMN developerEmail TEXT NOT NULL DEFAULT 'support@smartfarm.app'")
+                        db.execSQL("ALTER TABLE `system_settings` ADD COLUMN developerSupportNote TEXT NOT NULL DEFAULT 'Legacy v7 support note'")
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (1, 'System Admin', '01700000000', 'admin@smartfarm.app', '${PasswordHasher.hash("admin@2026")}', 'SUPER_ADMIN', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                        db.execSQL("INSERT INTO system_settings (id, announcementBanner, maintenanceMode, defaultCurrencyCode, allowManualPayments, developerPhone) VALUES (1, 'legacy v7 banner', 0, 'BDT', 1, '01799887766')")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8
+            )
+            .fallbackToDestructiveMigration(true)
+            .fallbackToDestructiveMigrationOnDowngrade(true)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val settings = migratedRepo.observeSystemSettings().first()!!
+            assertEquals("legacy v7 banner", settings.announcementBanner)
+            assertEquals("01799887766", settings.developerPhone)
+            assertEquals("", settings.adminPinHash)
+
+            val admin = migratedRepo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+            assertEquals(UserRole.SUPER_ADMIN.name, admin.role)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun developerContactHelper_normalizesPhoneWhatsAppAndBuildsIntents() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        assertEquals("+8801712345678", DeveloperContactHelper.normalizePhoneForDial("+880 1712-345678"))
+        assertEquals("01712345678", DeveloperContactHelper.normalizePhoneForDial(" 01712-345 678 "))
+        assertEquals("8801712345678", DeveloperContactHelper.normalizePhoneForWhatsApp("01712-345678"))
+        assertEquals("8801712345678", DeveloperContactHelper.normalizePhoneForWhatsApp("+880 1712-345678"))
+        assertEquals("", DeveloperContactHelper.normalizePhoneForWhatsApp("   "))
+
+        val dialIntent = DeveloperContactHelper.buildDialIntent("+880 1712-345678")
+        assertNotNull(dialIntent)
+        assertEquals(Intent.ACTION_DIAL, dialIntent!!.action)
+        assertEquals("tel:+8801712345678", dialIntent.dataString)
+
+        val waIntent = DeveloperContactHelper.buildWhatsAppIntent(
+            context = context,
+            whatsAppNumber = "01712-345678",
+            prefillMessage = "Need app support"
+        )
+        assertNotNull(waIntent)
+        assertEquals(Intent.ACTION_VIEW, waIntent!!.action)
+        assertTrue(waIntent.dataString!!.startsWith("https://wa.me/8801712345678"))
+
+        val mailIntent = DeveloperContactHelper.buildEmailIntent(
+            email = "dev@smartfarm.app",
+            subject = "Support",
+            body = "Details"
+        )
+        assertNotNull(mailIntent)
+        assertEquals(Intent.ACTION_SENDTO, mailIntent!!.action)
+        assertEquals("mailto:dev@smartfarm.app", mailIntent.dataString)
+    }
+
+    @Test
+    fun superAdmin_loginWithPin_blocksPublicReset_andRotatesCredentials() = runTest {
+        repo.initializeDatabase()
+
+        // Wrong PIN rejected
+        val badPin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "9999")
+        assertTrue(badPin.isFailure)
+
+        // Default initial PIN works cleanly
+        val admin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+        assertEquals(UserRole.SUPER_ADMIN.name, admin.role)
+
+        // Public Forgot Password must never allow resetting Super Admin
+        val resetResult = repo.resetPassword("admin@smartfarm.app", "hackedPass123")
+        assertTrue(resetResult.isFailure)
+        assertTrue(resetResult.exceptionOrNull() is SecurityException)
+
+        // Wrong current password rejected during credential rotation
+        val wrongCurrent = repo.adminChangeCredentials(
+            actorId = admin.id,
+            currentPassword = "wrong_password",
+            newEmail = "owner@myfarm.app",
+            newPassword = "NewStrongPass#99",
+            newSecurityPin = "7788"
+        )
+        assertTrue(wrongCurrent.isFailure)
+
+        // Valid rotation updates email, password, and security PIN hash
+        val rotated = repo.adminChangeCredentials(
+            actorId = admin.id,
+            currentPassword = "admin@2026",
+            newEmail = "owner@myfarm.app",
+            newPassword = "NewStrongPass#99",
+            newSecurityPin = "7788"
+        ).getOrThrow()
+        assertEquals("owner@myfarm.app", rotated.email)
+
+        // Old password and old PIN no longer succeed
+        assertTrue(repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").isFailure)
+        assertTrue(repo.loginSuperAdmin("owner@myfarm.app", "NewStrongPass#99", "2026").isFailure)
+
+        // New credentials + new PIN succeed
+        val reAuthed = repo.loginSuperAdmin("owner@myfarm.app", "NewStrongPass#99", "7788").getOrThrow()
+        assertEquals(admin.id, reAuthed.id)
+    }
+
+    @Test
+    fun superAdmin_deletesOnlineShopProductAndCascadesUserIdsCompletely() = runTest {
+        repo.initializeDatabase()
+        val admin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+        val farmer = repo.register("Test Seller", "01811112222", "seller@smartfarm.app", "seller123", UserRole.FARMER).getOrThrow()
+
+        // Cannot delete Super Admin account
+        val selfDelete = repo.adminDeleteUserCompletely(admin.id, admin)
+        assertTrue(selfDelete.isFailure)
+        assertTrue(selfDelete.exceptionOrNull() is SecurityException)
+
+        // Grant an active plan so the farmer can list products in the online shop
+        val plan = repo.observePlans().first().first()
+        repo.adminGrantSubscription(admin.id, farmer, plan).getOrThrow()
+
+        // Seed a farm, two shop products, one ad, and an employee login under this farmer
+        val farmId = repo.saveFarm(
+            FarmEntity(
+                ownerUserId = farmer.id,
+                farmCode = "FM-55",
+                name = "Seller Agro",
+                location = "Rajshahi",
+                address = "Station Road, Rajshahi",
+                category = "MIXED"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val product1 = InventoryItemEntity(
+            farmId = farmId,
+            ownerUserId = farmer.id,
+            name = "Mango Juice Bottle",
+            category = "Mango",
+            sourcingType = ProductSourcingType.FARM_PRODUCED.key,
+            quantity = 30.0,
+            unit = "bottle",
+            unitCost = 60.0,
+            sellingPrice = 110.0,
+            listInMarketplace = true
+        )
+        val prod1Id = repo.saveInventoryItem(product1, actorUserId = farmer.id)
+        val prod2Id = repo.saveInventoryItem(
+            product1.copy(name = "Organic Honey Jar", category = "Honey"),
+            actorUserId = farmer.id
+        )
+
+        val savedProd1 = db.inventoryDao().getItemById(prod1Id)!!
+        repo.saveProductAd(
+            ProductAdEntity(
+                ownerUserId = farmer.id,
+                farmId = farmId,
+                inventoryItemId = prod1Id,
+                productName = "Mango Juice Bottle",
+                farmName = "Seller Agro",
+                priceText = "৳110",
+                hookHeadlineBn = "তাজা আমের জুস",
+                benefitsPipeSeparatedBn = "১০০% খাঁটি|তাজা আম|হোম ডেলিভারি",
+                voiceoverScriptBn = "তাজা আমের জুস কিনতে এখনই অর্ডার করুন।",
+                orderStepsPipeSeparatedBn = "১. পণ্য বাছাই করুন|২. অর্ডার দিন",
+                isActiveInShop = true
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val empId = repo.saveEmployee(
+            EmployeeEntity(farmId = farmId, ownerUserId = farmer.id, name = "Helper One", phone = "01899998888", designation = "Staff", salary = 8000.0),
+            actorUserId = farmer.id
+        )
+        val empEntity = repo.observeEmployees(farmer.id).first().first { it.id == empId }
+        val provisionedEmployee = repo.provisionEmployeeLogin(
+            actorId = farmer.id,
+            employee = empEntity,
+            email = "helper1@smartfarm.app",
+            mobile = "01899998888",
+            password = "empPassword1"
+        ).getOrThrow()
+        val empUserId = provisionedEmployee.linkedUserId!!
+
+        // 1) Admin deletes product1 from the online shop -> product1 and its linked ad vanish, product2 stays
+        repo.adminDeleteOnlineShopProduct(admin.id, savedProd1).getOrThrow()
+        assertNull(db.inventoryDao().getItemById(prod1Id))
+        assertNotNull(db.inventoryDao().getItemById(prod2Id))
+        assertTrue(repo.observeAllAdsAdmin().first().none { it.inventoryItemId == prod1Id })
+
+        // 2) Admin deletes seller user ID completely -> seller, farm, product2, remaining ads, and employee login all cascade away
+        repo.adminDeleteUserCompletely(admin.id, farmer).getOrThrow()
+
+        assertNull(db.userDao().getUserById(farmer.id))
+        assertNull(db.userDao().getUserById(empUserId))
+        assertNull(db.inventoryDao().getItemById(prod2Id))
+        assertTrue(repo.observeFarms(farmer.id).first().isEmpty())
+        assertTrue(repo.observeAllInventoryAdmin().first().none { it.ownerUserId == farmer.id })
+        assertTrue(repo.observeAllAdsAdmin().first().none { it.ownerUserId == farmer.id })
     }
 }

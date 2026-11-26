@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -65,6 +66,7 @@ fun AppSettingsScreen(
     onUpdateProfile: ((String, String, String?) -> Unit)? = null,
     onSubmitSupport: ((String, String) -> Unit)? = null,
     onSaveDeveloperSettings: ((SystemSettingsEntity) -> Unit)? = null,
+    onChangeAdminCredentials: ((currentPass: String, newEmail: String, newPass: String, newPin: String, onDone: () -> Unit) -> Unit)? = null,
     onMarkNotificationsRead: (() -> Unit)? = null,
     onMessage: (String) -> Unit = {},
     onLogout: () -> Unit
@@ -83,6 +85,7 @@ fun AppSettingsScreen(
     var showSupportDialog by remember { mutableStateOf(false) }
     var showEditDevContactDialog by remember { mutableStateOf(false) }
     var showFaqSection by remember { mutableStateOf(false) }
+    var showChangeAdminCredentialsDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -100,7 +103,8 @@ fun AppSettingsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 720.dp),
+                .widthIn(max = 720.dp)
+                .testTag("settings_lazy_column"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -597,53 +601,82 @@ fun AppSettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
 
-                        // Report a problem / In-App Support Ticket
-                        if (onSubmitSupport != null) {
-                            FilledTonalButton(
-                                onClick = { showSupportDialog = true },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("settings_report_problem_button")
-                            ) {
-                                Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(tr("Report App Issue / Send Support Ticket", "অ্যাপের সমস্যা জানান / সাপোর্ট টিকিট পাঠান"), fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-
-                        // User's Support Tickets
-                        if (supportRequests.isNotEmpty()) {
-                            Text(
-                                tr("Your Support Requests (${supportRequests.size})", "আপনার সাপোর্ট অনুরোধ (${supportRequests.size})"),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            supportRequests.take(5).forEach { req ->
-                                val stLabel = if (req.status == "OPEN") tr("OPEN", "খোলা") else tr("RESOLVED", "সমাধান হয়েছে")
-                                Surface(
-                                    shape = MaterialTheme.shapes.small,
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                    modifier = Modifier.fillMaxWidth()
+            // 4b. Report Problem & Support Tickets Card
+            if (onSubmitSupport != null || supportRequests.isNotEmpty()) {
+                item(key = "settings_support_ticket_card") {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (onSubmitSupport != null) {
+                                FilledTonalButton(
+                                    onClick = { showSupportDialog = true },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("settings_report_problem_button")
                                 ) {
-                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        Text("${req.subject} ($stLabel)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                        Text(req.message, style = MaterialTheme.typography.bodySmall)
-                                        if (req.adminReply.isNotBlank()) {
-                                            Text(
-                                                "${tr("Developer Reply", "ডেভেলপারের উত্তর")}: ${req.adminReply}",
-                                                color = MaterialTheme.colorScheme.primary,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
+                                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(tr("Report App Issue / Send Support Ticket", "অ্যাপের সমস্যা জানান / সাপোর্ট টিকিট পাঠান"), fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            if (supportRequests.isNotEmpty()) {
+                                Text(
+                                    tr("Your Support Requests (${supportRequests.size})", "আপনার সাপোর্ট অনুরোধ (${supportRequests.size})"),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                supportRequests.take(5).forEach { req ->
+                                    val stLabel = if (req.status == "OPEN") tr("OPEN", "খোলা") else tr("RESOLVED", "সমাধান হয়েছে")
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text("${req.subject} ($stLabel)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                            Text(req.message, style = MaterialTheme.typography.bodySmall)
+                                            if (req.adminReply.isNotBlank()) {
+                                                Text(
+                                                    "${tr("Developer Reply", "ডেভেলপারের উত্তর")}: ${req.adminReply}",
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
 
-                        // Quick Help FAQ
+            // 4c. Quick Help FAQ Card
+            item(key = "settings_faq_card") {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         OutlinedButton(
                             onClick = { showFaqSection = !showFaqSection },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("settings_faq_toggle")
@@ -736,6 +769,48 @@ fun AppSettingsScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5b. Super Admin Password & PIN Change
+            if (onChangeAdminCredentials != null) {
+                item(key = "settings_admin_security_card") {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_admin_security_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    tr("Super Admin Security & Password", "সুপার অ্যাডমিন সিকিউরিটি ও পাসওয়ার্ড"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                tr(
+                                    "Change your Super Admin email, login password, and Developer Security PIN so nobody else can access the admin panel.",
+                                    "সুপার অ্যাডমিনের ইমেইল, পাসওয়ার্ড এবং ডেভেলপার সিকিউরিটি পিন পরিবর্তন করুন যেন অন্য কেউ অ্যাডমিন প্যানেলে প্রবেশ করতে না পারে।"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FilledTonalButton(
+                                onClick = { showChangeAdminCredentialsDialog = true },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("settings_change_admin_password_button")
+                            ) {
+                                Icon(Icons.Default.Password, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(tr("Change Admin Password & PIN", "অ্যাডমিন পাসওয়ার্ড ও পিন পরিবর্তন"), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -945,6 +1020,87 @@ fun AppSettingsScreen(
                 }) { Text(strings.save) }
             },
             dismissButton = { TextButton(onClick = { showEditDevContactDialog = false }) { Text(strings.cancel) } }
+        )
+    }
+
+    // Super Admin Password & PIN Change Dialog
+    if (showChangeAdminCredentialsDialog && onChangeAdminCredentials != null) {
+        var currentPass by remember { mutableStateOf("") }
+        var newEmail by remember(user.email) { mutableStateOf(user.email) }
+        var newPass by remember { mutableStateOf("") }
+        var confirmPass by remember { mutableStateOf("") }
+        var newPin by remember { mutableStateOf("") }
+        var localErr by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showChangeAdminCredentialsDialog = false },
+            icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text(tr("Change Super Admin Password & PIN", "সুপার অ্যাডমিন পাসওয়ার্ড ও পিন পরিবর্তন")) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    localErr?.let { err ->
+                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedTextField(
+                        value = currentPass,
+                        onValueChange = { currentPass = it; localErr = null },
+                        label = { Text(tr("Current Password *", "বর্তমান পাসওয়ার্ড *")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newEmail,
+                        onValueChange = { newEmail = it; localErr = null },
+                        label = { Text(tr("Admin Email", "অ্যাডমিন ইমেইল")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newPass,
+                        onValueChange = { newPass = it; localErr = null },
+                        label = { Text(tr("New Password (min 6 chars)", "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = confirmPass,
+                        onValueChange = { confirmPass = it; localErr = null },
+                        label = { Text(tr("Confirm New Password", "নতুন পাসওয়ার্ড নিশ্চিত করুন")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newPin,
+                        onValueChange = { newPin = it; localErr = null },
+                        label = { Text(tr("New Developer Security PIN (optional)", "নতুন সিকিউরিটি পিন (ঐচ্ছিক)")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (currentPass.isBlank()) {
+                        localErr = if (isBn) "বর্তমান পাসওয়ার্ড দিন।" else "Enter current password."
+                    } else if (newPass.isNotBlank() && newPass != confirmPass) {
+                        localErr = if (isBn) "নতুন পাসওয়ার্ড দুটি মেলেনি।" else "New passwords do not match."
+                    } else {
+                        onChangeAdminCredentials(currentPass, newEmail, newPass, newPin) {
+                            showChangeAdminCredentialsDialog = false
+                        }
+                    }
+                }) { Text(strings.save) }
+            },
+            dismissButton = { TextButton(onClick = { showChangeAdminCredentialsDialog = false }) { Text(strings.cancel) } }
         )
     }
 

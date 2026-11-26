@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.local.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -35,6 +36,42 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             ?: return Result.failure(IllegalArgumentException("No account found with those credentials."))
         if (!PasswordHasher.verify(password, user.passwordHash)) {
             return Result.failure(IllegalArgumentException("Incorrect password."))
+        }
+        if (user.status == AccountStatus.SUSPENDED.name) {
+            return Result.failure(IllegalStateException("This account is suspended. Contact Super Admin."))
+        }
+        if (user.status == AccountStatus.INACTIVE.name) {
+            return Result.failure(IllegalStateException("This account is inactive. Contact Super Admin."))
+        }
+        return Result.success(user)
+    }
+
+    suspend fun loginSuperAdmin(
+        identifier: String,
+        password: String,
+        securityPin: String
+    ): Result<UserEntity> {
+        val trimmed = identifier.trim()
+        val trimmedPin = securityPin.trim()
+        if (trimmed.isBlank() || password.isBlank() || trimmedPin.isBlank()) {
+            return Result.failure(IllegalArgumentException("Email, password, and security PIN are required."))
+        }
+        val user = userDao.getUserByEmail(trimmed) ?: userDao.getUserByMobile(trimmed)
+            ?: return Result.failure(IllegalArgumentException("No account found with those credentials."))
+        if (user.role != UserRole.SUPER_ADMIN.name) {
+            return Result.failure(SecurityException("Access Denied: Super Admin role required."))
+        }
+        if (!PasswordHasher.verify(password, user.passwordHash)) {
+            return Result.failure(IllegalArgumentException("Incorrect password."))
+        }
+        val settings = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val validPin = if (settings.adminPinHash.isNotBlank()) {
+            PasswordHasher.verify(trimmedPin, settings.adminPinHash)
+        } else {
+            trimmedPin == "2026"
+        }
+        if (!validPin) {
+            return Result.failure(SecurityException("Invalid Developer Security PIN."))
         }
         if (user.status == AccountStatus.SUSPENDED.name) {
             return Result.failure(IllegalStateException("This account is suspended. Contact Super Admin."))
@@ -130,6 +167,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         }
         val user = userDao.getUserByEmail(identifier.trim()) ?: userDao.getUserByMobile(identifier.trim())
             ?: return Result.failure(IllegalArgumentException("Account not found."))
+        if (user.role == UserRole.SUPER_ADMIN.name) {
+            return Result.failure(SecurityException("Super Admin password cannot be reset publicly."))
+        }
         userDao.update(user.copy(passwordHash = PasswordHasher.hash(newPassword)))
         return Result.success(Unit)
     }
@@ -183,6 +223,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     // --- Super Admin Streams ---
     fun observeAllUsers(): Flow<List<UserEntity>> = userDao.observeAllUsers()
     fun observeAllFarmsAdmin(): Flow<List<FarmEntity>> = farmDao.observeAllFarms()
+    fun observeAllInventoryAdmin(): Flow<List<InventoryItemEntity>> = inventoryDao.observeAllInventoryAdmin()
+    fun observeAllAdsAdmin(): Flow<List<ProductAdEntity>> = productAdDao.observeAllAdsAdmin()
     fun observeAllSalesAdmin(): Flow<List<SaleEntity>> = commerceDao.observeAllSales()
     fun observeAllExpensesAdmin(): Flow<List<ExpenseEntity>> = opsDao.observeAllExpenses()
     fun observeAllOrdersAdmin(): Flow<List<OrderEntity>> = commerceDao.observeAllOrders()
@@ -1568,6 +1610,158 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                 details = "Replied to ${req.userName}"
             )
         )
+    }
+
+    suspend fun adminChangeCredentials(
+        actorId: Long,
+        currentPassword: String,
+        newEmail: String,
+        newPassword: String,
+        newSecurityPin: String
+    ): Result<UserEntity> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        if (!PasswordHasher.verify(currentPassword, admin.passwordHash)) {
+            throw SecurityException("Current Super Admin password is incorrect.")
+        }
+        val cleanEmail = newEmail.trim().lowercase().ifBlank { admin.email }
+        if (!cleanEmail.contains("@")) {
+            throw IllegalArgumentException("Enter a valid admin email address.")
+        }
+        if (cleanEmail != admin.email && userDao.getUserByEmail(cleanEmail) != null) {
+            throw IllegalArgumentException("An account with this email already exists.")
+        }
+        val cleanNewPass = newPassword
+        if (cleanNewPass.isNotBlank() && cleanNewPass.length < 6) {
+            throw IllegalArgumentException("New Super Admin password must be at least 6 characters.")
+        }
+        val cleanNewPin = newSecurityPin.trim()
+        if (cleanNewPin.isNotBlank() && cleanNewPin.length < 4) {
+            throw IllegalArgumentException("Security PIN must be at least 4 characters.")
+        }
+        val emailChanged = cleanEmail != admin.email
+        val passChanged = cleanNewPass.isNotBlank()
+        val pinChanged = cleanNewPin.isNotBlank()
+        if (!emailChanged && !passChanged && !pinChanged) {
+            throw IllegalArgumentException("Enter a new email, password, or security PIN to update.")
+        }
+
+        val updatedAdmin = admin.copy(
+            email = cleanEmail,
+            passwordHash = if (passChanged) PasswordHasher.hash(cleanNewPass) else admin.passwordHash
+        )
+        db.withTransaction {
+            userDao.update(updatedAdmin)
+            if (pinChanged) {
+                val currentSettings = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+                subAdminDao.saveSystemSettings(
+                    currentSettings.copy(adminPinHash = PasswordHasher.hash(cleanNewPin))
+                )
+            }
+            subAdminDao.insertAuditLog(
+                AdminAuditLogEntity(
+                    actorUserId = updatedAdmin.id,
+                    actorName = updatedAdmin.name,
+                    action = "ADMIN_CREDENTIALS_UPDATED",
+                    target = updatedAdmin.email,
+                    details = buildList {
+                        if (emailChanged) add("Email updated")
+                        if (passChanged) add("Password rotated")
+                        if (pinChanged) add("Security PIN rotated")
+                    }.joinToString(", ")
+                )
+            )
+        }
+        updatedAdmin
+    }
+
+    suspend fun adminDeleteOnlineShopProduct(
+        actorId: Long,
+        item: InventoryItemEntity
+    ): Result<Unit> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        db.withTransaction {
+            productAdDao.deleteAdsByInventoryItem(item.id)
+            inventoryDao.deleteItem(item)
+            subAdminDao.insertAuditLog(
+                AdminAuditLogEntity(
+                    actorUserId = admin.id,
+                    actorName = admin.name,
+                    action = "SHOP_PRODUCT_DELETED",
+                    target = item.name,
+                    details = "Removed product #${item.id} (owner ID #${item.ownerUserId}, category ${item.category}) and linked ads."
+                )
+            )
+        }
+    }
+
+    suspend fun adminDeleteProductAd(
+        actorId: Long,
+        ad: ProductAdEntity
+    ): Result<Unit> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        db.withTransaction {
+            productAdDao.deleteAd(ad)
+            subAdminDao.insertAuditLog(
+                AdminAuditLogEntity(
+                    actorUserId = admin.id,
+                    actorName = admin.name,
+                    action = "PRODUCT_AD_DELETED",
+                    target = ad.productName,
+                    details = "Removed shop video ad #${ad.id} (owner ID #${ad.ownerUserId})."
+                )
+            )
+        }
+    }
+
+    suspend fun adminDeleteUserCompletely(
+        actorId: Long,
+        targetUser: UserEntity
+    ): Result<Unit> = runCatching {
+        val admin = requireSuperAdmin(actorId)
+        if (targetUser.id == admin.id || targetUser.role == UserRole.SUPER_ADMIN.name) {
+            throw SecurityException("Cannot delete a Super Admin account.")
+        }
+        db.withTransaction {
+            val childEmployeeUsers = userDao.getEmployeesByOwnerId(targetUser.id)
+
+            productAdDao.deleteAdsByOwner(targetUser.id)
+            inventoryDao.deleteMovementsByOwner(targetUser.id)
+            inventoryDao.deleteByOwner(targetUser.id)
+            agriDao.deleteExpensesByOwner(targetUser.id)
+            agriDao.deleteCropsByOwner(targetUser.id)
+            agriDao.deleteLandsByOwner(targetUser.id)
+            commerceDao.deleteOrdersByUser(targetUser.id)
+            commerceDao.deleteCustomersByOwner(targetUser.id)
+            animalDao.deleteCustomCategoriesByOwner(targetUser.id)
+            permissionDao.deletePermissionsByOwner(targetUser.id)
+            permissionDao.deleteCustomOptionsByOwner(targetUser.id)
+            subAdminDao.deleteSubscriptionsByUser(targetUser.id)
+            subAdminDao.deleteNotificationsForUser(targetUser.id)
+            subAdminDao.deleteSupportByUser(targetUser.id)
+            opsDao.unlinkEmployeeUser(targetUser.id)
+
+            childEmployeeUsers.forEach { child ->
+                subAdminDao.deleteSubscriptionsByUser(child.id)
+                subAdminDao.deleteNotificationsForUser(child.id)
+                subAdminDao.deleteSupportByUser(child.id)
+                commerceDao.deleteOrdersByUser(child.id)
+                opsDao.unlinkEmployeeUser(child.id)
+            }
+            userDao.deleteEmployeesByOwnerId(targetUser.id)
+
+            farmDao.deleteFarmsByOwner(targetUser.id)
+            userDao.deleteById(targetUser.id)
+
+            subAdminDao.insertAuditLog(
+                AdminAuditLogEntity(
+                    actorUserId = admin.id,
+                    actorName = admin.name,
+                    action = "USER_DELETED_COMPLETELY",
+                    target = "${targetUser.name} (#${targetUser.id}, ${targetUser.email})",
+                    details = "Permanently removed user ID #${targetUser.id}, role ${targetUser.role}, farms, online shop products, ads, and child employee accounts."
+                )
+            )
+        }
     }
 
     // --- Agriculture, Crops, Lands & Sector Expenses ---

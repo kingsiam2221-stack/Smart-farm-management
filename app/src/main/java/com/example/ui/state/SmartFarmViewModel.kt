@@ -71,7 +71,9 @@ data class SuperAdminState(
     val auditLogs: List<AdminAuditLogEntity> = emptyList(),
     val employees: List<EmployeeEntity> = emptyList(),
     val employeePermissions: List<EmployeePermissionEntity> = emptyList(),
-    val customPermissionOptions: List<CustomPermissionOptionEntity> = emptyList()
+    val customPermissionOptions: List<CustomPermissionOptionEntity> = emptyList(),
+    val inventoryItems: List<InventoryItemEntity> = emptyList(),
+    val productAds: List<ProductAdEntity> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -81,6 +83,7 @@ class SmartFarmViewModel(
 ) : ViewModel() {
 
     val preferences: StateFlow<UserPreferencesState> = prefsRepo.preferences
+        .catch { emit(UserPreferencesState()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserPreferencesState())
 
     val currentUser: StateFlow<UserEntity?> = preferences
@@ -88,13 +91,16 @@ class SmartFarmViewModel(
             val uid = prefs.currentUserId
             if (uid == null) flowOf(null) else repository.observeUser(uid)
         }
+        .catch { emit(null) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val plans: StateFlow<List<SubscriptionPlanEntity>> = repository.observePlans()
+        .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val systemSettings: StateFlow<SystemSettingsEntity> = repository.observeSystemSettings()
         .map { it ?: SystemSettingsEntity() }
+        .catch { emit(SystemSettingsEntity()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SystemSettingsEntity())
 
     val notifications: StateFlow<List<AppNotificationEntity>> = currentUser
@@ -105,6 +111,7 @@ class SmartFarmViewModel(
                 repository.observeNotifications(ownerId)
             }
         }
+        .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val employeeAccessPolicy: StateFlow<EmployeeAccessPolicy> = currentUser
@@ -297,9 +304,11 @@ class SmartFarmViewModel(
             val g3 = combine(
                 repository.observeAllEmployeesAdmin(),
                 repository.observeAllPermissions(),
-                repository.observeAllCustomOptions()
-            ) { emps, perms, customOpts ->
-                Triple(emps, perms, customOpts)
+                repository.observeAllCustomOptions(),
+                repository.observeAllInventoryAdmin(),
+                repository.observeAllAdsAdmin()
+            ) { emps, perms, customOpts, invItems, ads ->
+                Tuple5(emps, perms, customOpts, invItems, ads)
             }
             combine(g1, g2, g3) { a, b, c ->
                 SuperAdminState(
@@ -311,9 +320,11 @@ class SmartFarmViewModel(
                     orders = b.b,
                     supportRequests = b.c,
                     auditLogs = b.d,
-                    employees = c.first,
-                    employeePermissions = c.second,
-                    customPermissionOptions = c.third
+                    employees = c.a,
+                    employeePermissions = c.b,
+                    customPermissionOptions = c.c,
+                    inventoryItems = c.d,
+                    productAds = c.e
                 )
             }
         }
@@ -367,6 +378,16 @@ class SmartFarmViewModel(
             "Please select a valid land plot." -> "একটি বৈধ জমি নির্বাচন করুন।"
             "Expense amount must be greater than zero." -> "খরচের পরিমাণ ০-এর বেশি হতে হবে।"
             "Ad headline is required." -> "বিজ্ঞাপনের শিরোনাম আবশ্যক।"
+            "Email, password, and security PIN are required." -> "ইমেইল, পাসওয়ার্ড এবং সিকিউরিটি পিন আবশ্যক।"
+            "Access Denied: Super Admin role required." -> "প্রবেশাধিকার নেই: সুপার অ্যাডমিন অ্যাকাউন্ট প্রয়োজন।"
+            "Invalid Developer Security PIN." -> "ভুল ডেভেলপার সিকিউরিটি পিন।"
+            "Super Admin password cannot be reset publicly." -> "সুপার অ্যাডমিন পাসওয়ার্ড পাবলিকলি রিসেট করা যায় না।"
+            "Current Super Admin password is incorrect." -> "বর্তমান সুপার অ্যাডমিন পাসওয়ার্ড সঠিক নয়।"
+            "Enter a valid admin email address." -> "সঠিক অ্যাডমিন ইমেইল ঠিকানা দিন।"
+            "New Super Admin password must be at least 6 characters." -> "নতুন সুপার অ্যাডমিন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।"
+            "Security PIN must be at least 4 characters." -> "সিকিউরিটি পিন কমপক্ষে ৪ অক্ষরের হতে হবে।"
+            "Enter a new email, password, or security PIN to update." -> "আপডেট করতে নতুন ইমেইল, পাসওয়ার্ড বা সিকিউরিটি পিন দিন।"
+            "Cannot delete a Super Admin account." -> "সুপার অ্যাডমিন অ্যাকাউন্ট মুছে ফেলা যাবে না।"
             else -> when {
                 raw?.startsWith("Subscription required:") == true ->
                     "এই অপশনটি ব্যবহার করতে সক্রিয় সাবস্ক্রিপশন প্রয়োজন।"
@@ -393,6 +414,19 @@ class SmartFarmViewModel(
                     repository.checkExpiredSubscriptions()
                 }
                 .onFailure { _authError.value = localizeError(it.message, "Login failed.", "লগইন ব্যর্থ হয়েছে।") }
+        }
+    }
+
+    fun loginSuperAdmin(identifier: String, password: String, securityPin: String) {
+        viewModelScope.launch {
+            _authError.value = null
+            repository.loginSuperAdmin(identifier, password, securityPin)
+                .onSuccess { user ->
+                    prefsRepo.setCurrentUserId(user.id)
+                    prefsRepo.setCurrency(user.preferredCurrency)
+                    repository.checkExpiredSubscriptions()
+                }
+                .onFailure { _authError.value = localizeError(it.message, "Super Admin login failed.", "সুপার অ্যাডমিন লগইন ব্যর্থ হয়েছে।") }
         }
     }
 
@@ -1461,6 +1495,77 @@ class SmartFarmViewModel(
             repository.adminResolveSupport(adminId, req, reply)
                 .onSuccess { _snackbarMessage.value = msg("Support ticket resolved.", "সাপোর্ট টিকিট সমাধান হয়েছে।") }
                 .onFailure { _snackbarMessage.value = it.message ?: msg("Action denied.", "অনুমতি নেই।") }
+        }
+    }
+
+    fun adminChangeCredentials(
+        currentPassword: String,
+        newEmail: String,
+        newPassword: String,
+        newSecurityPin: String,
+        onDone: () -> Unit = {}
+    ) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminChangeCredentials(adminId, currentPassword, newEmail, newPassword, newSecurityPin)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Super Admin password & security updated.",
+                        "সুপার অ্যাডমিন পাসওয়ার্ড ও সিকিউরিটি আপডেট হয়েছে।"
+                    )
+                    onDone()
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(err.message, "Could not update credentials.", "পাসওয়ার্ড আপডেট করা যায়নি।")
+                }
+        }
+    }
+
+    fun adminDeleteOnlineShopProduct(item: InventoryItemEntity) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminDeleteOnlineShopProduct(adminId, item)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "'${item.name}' removed from online shop.",
+                        "'${item.name}' অনলাইন শপ থেকে মুছে ফেলা হয়েছে।"
+                    )
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(err.message, "Could not remove product.", "পণ্যটি মুছে ফেলা যায়নি।")
+                }
+        }
+    }
+
+    fun adminDeleteProductAd(ad: ProductAdEntity) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminDeleteProductAd(adminId, ad)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Ad '${ad.productName}' deleted.",
+                        "'${ad.productName}' বিজ্ঞাপন মুছে ফেলা হয়েছে।"
+                    )
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(err.message, "Could not delete ad.", "বিজ্ঞাপন মুছে ফেলা যায়নি।")
+                }
+        }
+    }
+
+    fun adminDeleteUserCompletely(target: UserEntity) {
+        val adminId = currentUser.value?.id ?: return
+        viewModelScope.launch {
+            repository.adminDeleteUserCompletely(adminId, target)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "User ID #${target.id} (${target.name}) and all shop products deleted.",
+                        "আইডি #${target.id} (${target.name}) এবং এর সকল পণ্য সম্পূর্ণ মুছে ফেলা হয়েছে।"
+                    )
+                }
+                .onFailure { err ->
+                    _snackbarMessage.value = localizeError(err.message, "Could not delete user.", "ব্যবহারকারী মুছে ফেলা যায়নি।")
+                }
         }
     }
 

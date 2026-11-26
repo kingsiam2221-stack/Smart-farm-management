@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "Auth"
 
@@ -68,7 +69,7 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    val existing = Firebase.auth.currentUser
+    val existing = runCatching { Firebase.auth.currentUser }.getOrNull()
     if (existing != null) {
         onAuthSuccess(existing)
         return
@@ -166,16 +167,19 @@ fun signOutGoogle(
     scope: CoroutineScope,
     onSignOutComplete: () -> Unit = {}
 ) {
-    val credentialManager = CredentialManager.create(context)
-    scope.launch {
-        withContext(NonCancellable) {
-            try {
-                credentialManager.clearCredentialState(ClearCredentialStateRequest())
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to clear credential state: ${e.message}")
-            } finally {
-                Firebase.auth.signOut()
-                onSignOutComplete()
+    val credentialManager = runCatching { CredentialManager.create(context) }.getOrNull()
+    runCatching { Firebase.auth.signOut() }
+    onSignOutComplete()
+    if (credentialManager != null) {
+        scope.launch {
+            withContext(NonCancellable) {
+                try {
+                    withTimeoutOrNull(1500L) {
+                        credentialManager.clearCredentialState(ClearCredentialStateRequest())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to clear credential state: ${e.message}")
+                }
             }
         }
     }
@@ -190,11 +194,15 @@ fun GoogleSignInButton(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
     var isLoading by remember { mutableStateOf(false) }
 
     OutlinedButton(
         onClick = {
+            if (credentialManager == null) {
+                onAuthError("Google Sign-In is unavailable on this device")
+                return@OutlinedButton
+            }
             isLoading = true
             onGoogleSignInClicked(
                 context = context,

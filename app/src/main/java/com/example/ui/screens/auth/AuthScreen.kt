@@ -62,6 +62,7 @@ fun AuthScreen(
     authError: String?,
     onClearError: () -> Unit,
     onLogin: (String, String) -> Unit,
+    onAdminLogin: (String, String, String) -> Unit = { e, p, _ -> onLogin(e, p) },
     onRegister: (String, String, String, String, UserRole) -> Unit,
     onResetPassword: (String, String, () -> Unit) -> Unit,
     onGoogleSignInSuccess: (FirebaseUser, UserRole) -> Unit,
@@ -959,7 +960,7 @@ fun AuthScreen(
     }
 
     if (showAdminAccessDialog) {
-        var adminEmail by remember { mutableStateOf("admin@smartfarm.app") }
+        var adminEmail by remember { mutableStateOf("") }
         var adminPass by remember { mutableStateOf("") }
         var devPin by remember { mutableStateOf("") }
         var localErr by remember { mutableStateOf<String?>(null) }
@@ -972,9 +973,9 @@ fun AuthScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         if (isBangla)
-                            "অনুমোদিত ডেভেলপার তথ্য প্রয়োজন। ডেমো পিন: 2026 • পাসওয়ার্ড: admin@2026"
+                            "অনুমোদিত সুপার অ্যাডমিন ইমেইল, পাসওয়ার্ড এবং সিকিউরিটি পিন দিন।"
                         else
-                            "Authorized developer credentials required. Demo PIN: 2026 • Pass: admin@2026",
+                            "Enter your authorized Super Admin email, password, and Developer Security PIN.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -983,36 +984,42 @@ fun AuthScreen(
                     }
                     OutlinedTextField(
                         value = adminEmail,
-                        onValueChange = { adminEmail = it },
+                        onValueChange = { adminEmail = it; localErr = null },
                         label = { Text(if (isBangla) "অ্যাডমিন ইমেইল" else "Admin Email") },
-                        singleLine = true
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_login_email_input")
                     )
                     OutlinedTextField(
                         value = adminPass,
-                        onValueChange = { adminPass = it },
+                        onValueChange = { adminPass = it; localErr = null },
                         label = { Text(if (isBangla) "অ্যাডমিন পাসওয়ার্ড" else "Admin Password") },
                         visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_login_password_input")
                     )
                     OutlinedTextField(
                         value = devPin,
-                        onValueChange = { devPin = it },
+                        onValueChange = { devPin = it; localErr = null },
                         label = { Text(if (isBangla) "ডেভেলপার সিকিউরিটি পিন" else "Developer Security PIN") },
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_login_pin_input")
                     )
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    if (devPin.trim() != "2026") {
-                        localErr = if (isBangla) "ভুল ডেভেলপার সিকিউরিটি পিন।" else "Invalid Developer Security PIN."
-                    } else {
-                        showAdminAccessDialog = false
-                        onLogin(adminEmail, adminPass)
-                    }
-                }) { Text(if (isBangla) "কনসোল খুলুন" else "Unlock Console") }
+                Button(
+                    onClick = {
+                        if (adminEmail.isBlank() || adminPass.isBlank() || devPin.isBlank()) {
+                            localErr = if (isBangla) "ইমেইল, পাসওয়ার্ড এবং পিন আবশ্যক।" else "Email, password, and PIN are required."
+                        } else {
+                            showAdminAccessDialog = false
+                            onAdminLogin(adminEmail.trim(), adminPass, devPin.trim())
+                        }
+                    },
+                    modifier = Modifier.testTag("admin_unlock_console_button")
+                ) { Text(if (isBangla) "কনসোল খুলুন" else "Unlock Console") }
             },
             dismissButton = {
                 TextButton(onClick = { showAdminAccessDialog = false }) { Text(strings.cancel) }

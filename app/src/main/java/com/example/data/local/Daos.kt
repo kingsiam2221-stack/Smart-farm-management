@@ -33,6 +33,15 @@ interface UserDao {
 
     @Update
     suspend fun update(user: UserEntity)
+
+    @Query("DELETE FROM users WHERE id = :userId")
+    suspend fun deleteById(userId: Long)
+
+    @Query("SELECT * FROM users WHERE employerOwnerId = :ownerId")
+    suspend fun getEmployeesByOwnerId(ownerId: Long): List<UserEntity>
+
+    @Query("DELETE FROM users WHERE employerOwnerId = :ownerId")
+    suspend fun deleteEmployeesByOwnerId(ownerId: Long)
 }
 
 @Dao
@@ -60,6 +69,9 @@ interface FarmDao {
 
     @Delete
     suspend fun delete(farm: FarmEntity)
+
+    @Query("DELETE FROM farms WHERE ownerUserId = :ownerId")
+    suspend fun deleteFarmsByOwner(ownerId: Long)
 }
 
 @Dao
@@ -90,6 +102,9 @@ interface AnimalDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: AnimalEventEntity): Long
+
+    @Query("DELETE FROM animal_categories WHERE ownerUserId = :ownerId AND builtIn = 0")
+    suspend fun deleteCustomCategoriesByOwner(ownerId: Long)
 }
 
 @Dao
@@ -114,6 +129,9 @@ interface EggDao {
 interface InventoryDao {
     @Query("SELECT * FROM inventory_items WHERE ownerUserId = :ownerId ORDER BY updatedAt DESC")
     fun observeInventoryByOwner(ownerId: Long): Flow<List<InventoryItemEntity>>
+
+    @Query("SELECT * FROM inventory_items ORDER BY updatedAt DESC")
+    fun observeAllInventoryAdmin(): Flow<List<InventoryItemEntity>>
 
     @Query("SELECT * FROM inventory_items WHERE listInMarketplace = 1 AND quantity > 0 ORDER BY updatedAt DESC")
     fun observeMarketplaceItems(): Flow<List<InventoryItemEntity>>
@@ -156,6 +174,12 @@ interface InventoryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMovement(movement: InventoryMovementEntity): Long
+
+    @Query("DELETE FROM inventory_items WHERE ownerUserId = :ownerId")
+    suspend fun deleteByOwner(ownerId: Long)
+
+    @Query("DELETE FROM inventory_movements WHERE ownerUserId = :ownerId")
+    suspend fun deleteMovementsByOwner(ownerId: Long)
 }
 
 @Dao
@@ -204,6 +228,12 @@ interface CommerceDao {
 
     @Update
     suspend fun updateOrder(order: OrderEntity)
+
+    @Query("DELETE FROM customers WHERE ownerUserId = :ownerId")
+    suspend fun deleteCustomersByOwner(ownerId: Long)
+
+    @Query("DELETE FROM orders WHERE farmOwnerUserId = :ownerId OR customerUserId = :ownerId")
+    suspend fun deleteOrdersByUser(ownerId: Long)
 }
 
 @Dao
@@ -246,6 +276,9 @@ interface OperationsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSalaryPayment(payment: SalaryPaymentEntity): Long
+
+    @Query("UPDATE employees SET linkedUserId = NULL WHERE linkedUserId = :userId")
+    suspend fun unlinkEmployeeUser(userId: Long)
 }
 
 @Dao
@@ -312,6 +345,15 @@ interface SubscriptionAndAdminDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSystemSettings(settings: SystemSettingsEntity)
+
+    @Query("DELETE FROM user_subscriptions WHERE userId = :userId")
+    suspend fun deleteSubscriptionsByUser(userId: Long)
+
+    @Query("DELETE FROM notifications WHERE targetUserId = :userId")
+    suspend fun deleteNotificationsForUser(userId: Long)
+
+    @Query("DELETE FROM support_requests WHERE userId = :userId")
+    suspend fun deleteSupportByUser(userId: Long)
 }
 
 @Dao
@@ -354,6 +396,12 @@ interface PermissionDao {
 
     @Query("DELETE FROM employee_permissions WHERE permissionKey = :permissionKey")
     suspend fun deletePermissionsByKey(permissionKey: String)
+
+    @Query("DELETE FROM employee_permissions WHERE ownerUserId = :ownerId")
+    suspend fun deletePermissionsByOwner(ownerId: Long)
+
+    @Query("DELETE FROM custom_permission_options WHERE ownerUserId = :ownerId")
+    suspend fun deleteCustomOptionsByOwner(ownerId: Long)
 }
 
 @Dao
@@ -399,12 +447,24 @@ interface AgriDao {
 
     @Query("DELETE FROM agri_expenses WHERE cropId = :cropId")
     suspend fun deleteExpensesByCropId(cropId: Long)
+
+    @Query("DELETE FROM agri_expenses WHERE ownerUserId = :ownerId")
+    suspend fun deleteExpensesByOwner(ownerId: Long)
+
+    @Query("DELETE FROM agri_crops WHERE ownerUserId = :ownerId")
+    suspend fun deleteCropsByOwner(ownerId: Long)
+
+    @Query("DELETE FROM agri_lands WHERE ownerUserId = :ownerId")
+    suspend fun deleteLandsByOwner(ownerId: Long)
 }
 
 @Dao
 interface ProductAdDao {
     @Query("SELECT * FROM product_ads WHERE ownerUserId = :ownerId ORDER BY createdAt DESC")
     fun observeAdsByOwner(ownerId: Long): Flow<List<ProductAdEntity>>
+
+    @Query("SELECT * FROM product_ads ORDER BY createdAt DESC")
+    fun observeAllAdsAdmin(): Flow<List<ProductAdEntity>>
 
     @Query("SELECT * FROM product_ads WHERE isActiveInShop = 1 ORDER BY createdAt DESC LIMIT 50")
     fun observeActiveShopAds(): Flow<List<ProductAdEntity>>
@@ -417,6 +477,12 @@ interface ProductAdDao {
 
     @Delete
     suspend fun deleteAd(ad: ProductAdEntity)
+
+    @Query("DELETE FROM product_ads WHERE inventoryItemId = :inventoryItemId")
+    suspend fun deleteAdsByInventoryItem(inventoryItemId: Long)
+
+    @Query("DELETE FROM product_ads WHERE ownerUserId = :ownerId")
+    suspend fun deleteAdsByOwner(ownerId: Long)
 }
 
 

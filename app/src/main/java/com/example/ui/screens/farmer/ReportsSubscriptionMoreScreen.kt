@@ -1,13 +1,9 @@
 package com.example.ui.screens.farmer
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,8 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -24,9 +18,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.example.data.local.*
-import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
@@ -38,31 +30,22 @@ import com.example.ui.state.FarmerDashboardState
 import com.example.util.ReportExportHelper
 
 enum class MoreTab {
-    REPORTS, SUBSCRIPTION, ALERTS, PROFILE
+    REPORTS, SUBSCRIPTION, ALERTS
 }
 
 @Composable
 fun ReportsSubscriptionProfileScreen(
-    user: UserEntity,
     state: FarmerDashboardState,
     plans: List<SubscriptionPlanEntity>,
     systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     notifications: List<AppNotificationEntity>,
     strings: AppStrings,
-    currentLanguage: AppLanguage,
     currentCurrency: CurrencyOption,
-    darkModeOverride: Boolean?,
-    languageOverrides: Map<String, String>,
     initialTab: MoreTab = MoreTab.REPORTS,
-    onSelectLanguage: (AppLanguage) -> Unit,
-    onSelectCurrency: (CurrencyOption) -> Unit,
-    onSelectDarkMode: (Boolean?) -> Unit,
-    onSetLanguageOverride: (String, String) -> Unit,
-    onUpdateProfile: (String, String, String?) -> Unit,
     onSubscribe: (SubscriptionPlanEntity, String, String, String) -> Unit,
     onMarkNotificationsRead: () -> Unit,
     onSubmitSupport: (String, String) -> Unit,
-    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit = {},
     onMessage: (String) -> Unit
 ) {
     val visibleTabs = remember(state.accessPolicy) {
@@ -70,8 +53,21 @@ fun ReportsSubscriptionProfileScreen(
             if (state.accessPolicy.has(AppPermission.REPORTS_VIEW_EXPORT)) add(MoreTab.REPORTS)
             if (state.accessPolicy.has(AppPermission.SUBSCRIPTION_MANAGE)) add(MoreTab.SUBSCRIPTION)
             if (state.accessPolicy.has(AppPermission.ALERTS_CAUTION_VIEW)) add(MoreTab.ALERTS)
-            add(MoreTab.PROFILE) // Always available so any logged-in user can view profile and log out
         }
+    }
+
+    if (visibleTabs.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            EmptyStateCard(
+                icon = Icons.Default.Tune,
+                title = strings.more,
+                subtitle = tr(
+                    "Open Settings to manage your profile, language, currency, and developer support.",
+                    "প্রোফাইল, ভাষা, মুদ্রা এবং ডেভেলপার সাপোর্ট ব্যবহার করতে সেটিংস খুলুন।"
+                )
+            )
+        }
+        return
     }
 
     var selectedTab by remember(initialTab, visibleTabs) {
@@ -83,37 +79,18 @@ fun ReportsSubscriptionProfileScreen(
     val alertsLabel = tr("Alerts / Caution", "সতর্কতা")
 
     Column(modifier = Modifier.fillMaxSize()) {
-        if (visibleTabs.size >= 4) {
-            ScrollableTabRow(selectedTabIndex = selectedIdx, edgePadding = 8.dp) {
-                visibleTabs.forEach { tab ->
-                    val title = when (tab) {
-                        MoreTab.REPORTS -> strings.reports
-                        MoreTab.SUBSCRIPTION -> strings.subscription
-                        MoreTab.ALERTS -> if (unread > 0) "$alertsLabel ($unread)" else alertsLabel
-                        MoreTab.PROFILE -> strings.profile
-                    }
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        text = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    )
+        TabRow(selectedTabIndex = selectedIdx) {
+            visibleTabs.forEach { tab ->
+                val title = when (tab) {
+                    MoreTab.REPORTS -> strings.reports
+                    MoreTab.SUBSCRIPTION -> strings.subscription
+                    MoreTab.ALERTS -> if (unread > 0) "$alertsLabel ($unread)" else alertsLabel
                 }
-            }
-        } else {
-            TabRow(selectedTabIndex = selectedIdx) {
-                visibleTabs.forEach { tab ->
-                    val title = when (tab) {
-                        MoreTab.REPORTS -> strings.reports
-                        MoreTab.SUBSCRIPTION -> strings.subscription
-                        MoreTab.ALERTS -> if (unread > 0) "$alertsLabel ($unread)" else alertsLabel
-                        MoreTab.PROFILE -> strings.profile
-                    }
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        text = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    )
-                }
+                Tab(
+                    selected = selectedTab == tab,
+                    onClick = { selectedTab = tab },
+                    text = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                )
             }
         }
 
@@ -128,21 +105,12 @@ fun ReportsSubscriptionProfileScreen(
                 onMessage = onMessage
             )
             MoreTab.SUBSCRIPTION -> SubscriptionTab(state, plans, systemSettings, strings, currentCurrency, onSubscribe, onMessage)
-            MoreTab.ALERTS -> NotificationsAndSupportTab(notifications, state.supportRequests, onMarkNotificationsRead, onSubmitSupport)
-            MoreTab.PROFILE -> ProfileSettingsTab(
-                user = user,
-                strings = strings,
-                canEditAppearance = state.accessPolicy.has(AppPermission.PROFILE_APPEARANCE),
-                currentLanguage = currentLanguage,
-                currentCurrency = currentCurrency,
-                darkModeOverride = darkModeOverride,
-                languageOverrides = languageOverrides,
-                onSelectLanguage = onSelectLanguage,
-                onSelectCurrency = onSelectCurrency,
-                onSelectDarkMode = onSelectDarkMode,
-                onSetLanguageOverride = onSetLanguageOverride,
-                onUpdateProfile = onUpdateProfile,
-                onLogout = onLogout
+            MoreTab.ALERTS -> NotificationsAndSupportTab(
+                notifications = notifications,
+                supportRequests = state.supportRequests,
+                onMarkRead = onMarkNotificationsRead,
+                onSubmitSupport = onSubmitSupport,
+                onOpenSettings = onOpenSettings
             )
         }
     }
@@ -648,7 +616,8 @@ private fun NotificationsAndSupportTab(
     notifications: List<AppNotificationEntity>,
     supportRequests: List<SupportRequestEntity>,
     onMarkRead: () -> Unit,
-    onSubmitSupport: (String, String) -> Unit
+    onSubmitSupport: (String, String) -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     val isBn = isBangla()
     var showSupportDialog by remember { mutableStateOf(false) }
@@ -677,7 +646,12 @@ private fun NotificationsAndSupportTab(
                     FilledTonalButton(onClick = { showSupportDialog = true }) {
                         Icon(Icons.Default.SupportAgent, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(tr("Contact Support", "সাপোর্টে যোগাযোগ"))
+                        Text(tr("Send Ticket", "টিকিট পাঠান"))
+                    }
+                    OutlinedButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(tr("Developer Contact & Settings", "ডেভেলপার যোগাযোগ ও সেটিংস"))
                     }
                 }
             }
@@ -754,157 +728,6 @@ private fun NotificationsAndSupportTab(
                 }) { Text(tr("Send", "পাঠান")) }
             },
             dismissButton = { TextButton(onClick = { showSupportDialog = false }) { Text(if (isBn) "বাতিল" else "Cancel") } }
-        )
-    }
-}
-
-@Composable
-private fun ProfileSettingsTab(
-    user: UserEntity,
-    strings: AppStrings,
-    canEditAppearance: Boolean,
-    currentLanguage: AppLanguage,
-    currentCurrency: CurrencyOption,
-    darkModeOverride: Boolean?,
-    languageOverrides: Map<String, String>,
-    onSelectLanguage: (AppLanguage) -> Unit,
-    onSelectCurrency: (CurrencyOption) -> Unit,
-    onSelectDarkMode: (Boolean?) -> Unit,
-    onSetLanguageOverride: (String, String) -> Unit,
-    onUpdateProfile: (String, String, String?) -> Unit,
-    onLogout: () -> Unit
-) {
-    val isBn = isBangla()
-    var name by remember(user.id) { mutableStateOf(user.name) }
-    var mobile by remember(user.id) { mutableStateOf(user.mobile) }
-    var imageUri by remember(user.id) { mutableStateOf(user.profileImageUri) }
-    var showLangCurrDialog by remember { mutableStateOf(false) }
-    var showLabelEditor by remember { mutableStateOf(false) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) imageUri = uri.toString()
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "prof_card") {
-            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!imageUri.isNullOrBlank()) {
-                        AsyncImage(model = imageUri, contentDescription = user.name, contentScale = ContentScale.Crop, modifier = Modifier.size(76.dp).clip(CircleShape))
-                    } else {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(76.dp)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                    OutlinedButton(onClick = { safeLaunchImagePicker(picker) }) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(tr("Upload Profile Picture", "প্রোফাইল ছবি আপলোড"))
-                    }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Full Name", "পূর্ণ নাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile Number", "মোবাইল নম্বর")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text(
-                        "${tr("Email", "ইমেইল")}: ${user.email} • ${tr("Role", "ভূমিকা")}: ${DomainLocalization.userRole(user.role, isBn)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Button(onClick = { onUpdateProfile(name, mobile, imageUri) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(strings.save)
-                    }
-                }
-            }
-        }
-
-        if (canEditAppearance) {
-            item(key = "prof_appearance") {
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(tr("Theme Mode", "থিম মোড"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        ThemeModeSelectorRow(
-                            darkModeOverride = darkModeOverride,
-                            onSelectDarkMode = onSelectDarkMode
-                        )
-                        HorizontalDivider()
-                        Text(tr("Language & Currency", "ভাষা ও মুদ্রা"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        FilledTonalButton(onClick = { showLangCurrDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Language, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("${currentLanguage.nativeName} • ${currentCurrency.symbol} ${currentCurrency.code} (${currentCurrency.countryName})")
-                        }
-                        OutlinedButton(onClick = { showLabelEditor = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Translate, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(tr("Customize App Labels / Terminology", "অ্যাপের নাম ও ট্যাব শিরোনাম পরিবর্তন"))
-                        }
-                    }
-                }
-            }
-        }
-
-        item(key = "prof_logout") {
-            Button(
-                onClick = onLogout,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("logout_button")
-            ) {
-                Icon(Icons.Default.Logout, contentDescription = strings.logout)
-                Spacer(Modifier.width(8.dp))
-                Text(strings.logout, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-
-    if (showLangCurrDialog) {
-        LanguageCurrencyDialog(
-            currentLanguage = currentLanguage,
-            currentCurrency = currentCurrency,
-            darkModeOverride = darkModeOverride,
-            onSelectLanguage = onSelectLanguage,
-            onSelectCurrency = onSelectCurrency,
-            onSelectDarkMode = onSelectDarkMode,
-            onDismiss = { showLangCurrDialog = false }
-        )
-    }
-
-    if (showLabelEditor) {
-        var customAppName by remember { mutableStateOf(languageOverrides["appName"] ?: "") }
-        var customDash by remember { mutableStateOf(languageOverrides["dashboard"] ?: "") }
-        var customFarms by remember { mutableStateOf(languageOverrides["farms"] ?: "") }
-        AlertDialog(
-            onDismissRequest = { showLabelEditor = false },
-            title = { Text(tr("Customize App Terminology", "অ্যাপের শিরোনাম কাস্টমাইজ করুন")) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        tr(
-                            "Leave blank to use default ${currentLanguage.displayName} text.",
-                            "ডিফল্ট ${currentLanguage.nativeName} লেখা ব্যবহার করতে ফাঁকা রাখুন।"
-                        ),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    OutlinedTextField(value = customAppName, onValueChange = { customAppName = it }, label = { Text(tr("App Title", "অ্যাপের নাম")) }, singleLine = true)
-                    OutlinedTextField(value = customDash, onValueChange = { customDash = it }, label = { Text(tr("Dashboard Tab", "ড্যাশবোর্ড ট্যাব")) }, singleLine = true)
-                    OutlinedTextField(value = customFarms, onValueChange = { customFarms = it }, label = { Text(tr("Farms Tab", "খামার ট্যাব")) }, singleLine = true)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onSetLanguageOverride("appName", customAppName)
-                    onSetLanguageOverride("dashboard", customDash)
-                    onSetLanguageOverride("farms", customFarms)
-                    showLabelEditor = false
-                }) { Text(strings.save) }
-            },
-            dismissButton = { TextButton(onClick = { showLabelEditor = false }) { Text(strings.cancel) } }
         )
     }
 }

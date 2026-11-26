@@ -508,7 +508,8 @@ data class SystemSettingsEntity(
     val developerPhone: String = "+8801700000000",
     val developerWhatsApp: String = "+8801700000000",
     val developerEmail: String = "support@smartfarm.app",
-    val developerSupportNote: String = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup."
+    val developerSupportNote: String = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup.",
+    val adminPinHash: String = ""
 )
 
 @Entity(

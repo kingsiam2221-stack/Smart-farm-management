@@ -1,9 +1,5 @@
 package com.example.ui.screens.customer
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -11,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,21 +38,18 @@ import com.example.i18n.CurrencyOption
 import com.example.i18n.DomainLocalization
 import com.example.i18n.isBangla
 import com.example.i18n.tr
+import com.example.ui.components.AppSettingsScreen
 import com.example.ui.components.EmptyStateCard
-import com.example.ui.components.LanguageCurrencyDialog
 import com.example.ui.components.ProductAdVideoPlayer
 import kotlinx.coroutines.launch
-import com.example.ui.components.ThemeModeSelectorRow
 import com.example.ui.components.formatShortDate
-import com.example.ui.components.nextThemeModeOverride
-import com.example.ui.components.themeModeIcon
-import com.example.ui.components.themeModeLabel
 import com.example.ui.state.CustomerPortalState
 
 @Composable
 fun CustomerPortalScreen(
     user: UserEntity,
     state: CustomerPortalState,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     notifications: List<AppNotificationEntity>,
     strings: AppStrings,
     currentLanguage: AppLanguage,
@@ -69,12 +61,14 @@ fun CustomerPortalScreen(
     onRequestCancelOrder: (OrderEntity) -> Unit,
     onMarkNotificationsRead: () -> Unit,
     onUpdateProfile: (String, String, String?) -> Unit,
+    onSubmitSupport: ((String, String) -> Unit)? = null,
     onSearchChange: (String) -> Unit = {},
     onSelectCategory: (String?) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectCurrency: (CurrencyOption) -> Unit,
     onSelectDarkMode: (Boolean?) -> Unit,
+    onMessage: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -87,7 +81,7 @@ fun CustomerPortalScreen(
             Triple(strings.marketplace, Icons.Default.Storefront, 0),
             Triple(if (cartCount > 0) "${strings.cart} ($cartCount)" else strings.cart, Icons.Default.ShoppingCart, 0),
             Triple(strings.myOrders, Icons.Default.LocalShipping, 0),
-            Triple(strings.profile, Icons.Default.Person, unreadNotifs)
+            Triple(strings.settings, Icons.Default.Settings, unreadNotifs)
         )
 
         Scaffold(
@@ -134,25 +128,35 @@ fun CustomerPortalScreen(
                         0 -> ShopCatalogTab(
                             state = state,
                             strings = strings,
-                            currentLanguage = currentLanguage,
                             currency = currentCurrency,
-                            darkModeOverride = darkModeOverride,
                             onSearchChange = onSearchChange,
                             onSelectCategory = onSelectCategory,
                             onLoadMore = onLoadMore,
-                            onToggleLanguage = {
-                                onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
-                            },
-                            onSelectDarkMode = onSelectDarkMode,
+                            onOpenSettings = { selectedTab = 3 },
                             onAddToCart = onAddToCart
                         )
                         1 -> CartCheckoutTab(state, strings, currentCurrency, onUpdateCartQty) { addr, method ->
                             onPlaceOrder(addr, method) { selectedTab = 2 }
                         }
                         2 -> CustomerOrdersTab(state, strings, currentCurrency, onRequestCancelOrder)
-                        else -> CustomerProfileTab(
-                            user, notifications, strings, currentLanguage, currentCurrency, darkModeOverride,
-                            onMarkNotificationsRead, onUpdateProfile, onSelectLanguage, onSelectCurrency, onSelectDarkMode, onLogout
+                        else -> AppSettingsScreen(
+                            user = user,
+                            systemSettings = systemSettings,
+                            strings = strings,
+                            currentLanguage = currentLanguage,
+                            currentCurrency = currentCurrency,
+                            darkModeOverride = darkModeOverride,
+                            canEditAppearance = true,
+                            supportRequests = state.supportRequests,
+                            notifications = notifications,
+                            onSelectLanguage = onSelectLanguage,
+                            onSelectCurrency = onSelectCurrency,
+                            onSelectDarkMode = onSelectDarkMode,
+                            onUpdateProfile = onUpdateProfile,
+                            onSubmitSupport = onSubmitSupport,
+                            onMarkNotificationsRead = onMarkNotificationsRead,
+                            onMessage = onMessage,
+                            onLogout = onLogout
                         )
                     }
                 }
@@ -165,14 +169,11 @@ fun CustomerPortalScreen(
 private fun ShopCatalogTab(
     state: CustomerPortalState,
     strings: AppStrings,
-    currentLanguage: AppLanguage,
     currency: CurrencyOption,
-    darkModeOverride: Boolean?,
     onSearchChange: (String) -> Unit,
     onSelectCategory: (String?) -> Unit,
     onLoadMore: () -> Unit,
-    onToggleLanguage: () -> Unit,
-    onSelectDarkMode: (Boolean?) -> Unit,
+    onOpenSettings: () -> Unit,
     onAddToCart: (InventoryItemEntity) -> Unit
 ) {
     val context = LocalContext.current
@@ -228,37 +229,11 @@ private fun ShopCatalogTab(
                         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color(0xFF0E3E16).copy(alpha = 0.88f)))
                     )
                 )
-                Row(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                FilledTonalIconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).testTag("customer_settings_button")
                 ) {
-                    AssistChip(
-                        onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
-                        label = { Text(themeModeLabel(darkModeOverride), fontWeight = FontWeight.SemiBold) },
-                        leadingIcon = { Icon(themeModeIcon(darkModeOverride), contentDescription = strings.themeMode, modifier = Modifier.size(16.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color.White.copy(alpha = 0.92f),
-                            labelColor = Color(0xFF0E3E16),
-                            leadingIconContentColor = Color(0xFF0E3E16)
-                        ),
-                        modifier = Modifier.testTag("customer_theme_toggle")
-                    )
-                    AssistChip(
-                        onClick = onToggleLanguage,
-                        label = {
-                            Text(
-                                if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        leadingIcon = { Icon(Icons.Default.Translate, contentDescription = strings.language, modifier = Modifier.size(16.dp)) },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = Color.White.copy(alpha = 0.92f),
-                            labelColor = Color(0xFF0E3E16),
-                            leadingIconContentColor = Color(0xFF0E3E16)
-                        )
-                    )
+                    Icon(Icons.Default.Settings, contentDescription = strings.settings)
                 }
                 Column(modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                     Text(
@@ -841,103 +816,5 @@ private fun CustomerOrdersTab(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun CustomerProfileTab(
-    user: UserEntity,
-    notifications: List<AppNotificationEntity>,
-    strings: AppStrings,
-    currentLanguage: AppLanguage,
-    currentCurrency: CurrencyOption,
-    darkModeOverride: Boolean?,
-    onMarkRead: () -> Unit,
-    onUpdateProfile: (String, String, String?) -> Unit,
-    onSelectLanguage: (AppLanguage) -> Unit,
-    onSelectCurrency: (CurrencyOption) -> Unit,
-    onSelectDarkMode: (Boolean?) -> Unit,
-    onLogout: () -> Unit
-) {
-    var name by remember(user.id) { mutableStateOf(user.name) }
-    var mobile by remember(user.id) { mutableStateOf(user.mobile) }
-    var imageUri by remember(user.id) { mutableStateOf(user.profileImageUri) }
-    var showSettings by remember { mutableStateOf(false) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) imageUri = uri.toString()
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (!imageUri.isNullOrBlank()) {
-                        AsyncImage(model = imageUri, contentDescription = user.name, contentScale = ContentScale.Crop, modifier = Modifier.size(68.dp).clip(CircleShape))
-                    } else {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(68.dp)) {
-                            Box(contentAlignment = Alignment.Center) { Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
-                        }
-                    }
-                    OutlinedButton(onClick = { com.example.ui.components.safeLaunchImagePicker(picker) }) {
-                        Text(tr("Change Photo", "ছবি পরিবর্তন করুন"))
-                    }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Name", "নাম")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile", "মোবাইল নম্বর")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Button(onClick = { onUpdateProfile(name, mobile, imageUri) }, modifier = Modifier.fillMaxWidth()) { Text(strings.save) }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text(
-                        tr("Theme Mode", "থিম মোড"),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.Start)
-                    )
-                    ThemeModeSelectorRow(
-                        darkModeOverride = darkModeOverride,
-                        onSelectDarkMode = onSelectDarkMode
-                    )
-                    FilledTonalButton(onClick = { showSettings = true }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Language, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("${currentLanguage.nativeName} • ${currentCurrency.symbol} ${currentCurrency.code}")
-                    }
-                    Button(
-                        onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(strings.logout) }
-                }
-            }
-        }
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(strings.notifications, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                TextButton(onClick = onMarkRead) { Text(tr("Mark Read", "পঠিত চিহ্নিত")) }
-            }
-        }
-        items(notifications, key = { it.id }) { n ->
-            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(n.title, fontWeight = FontWeight.Bold)
-                    Text(n.message, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-    }
-
-    if (showSettings) {
-        LanguageCurrencyDialog(
-            currentLanguage = currentLanguage,
-            currentCurrency = currentCurrency,
-            darkModeOverride = darkModeOverride,
-            onSelectLanguage = onSelectLanguage,
-            onSelectCurrency = onSelectCurrency,
-            onSelectDarkMode = onSelectDarkMode,
-            onDismiss = { showSettings = false }
-        )
     }
 }

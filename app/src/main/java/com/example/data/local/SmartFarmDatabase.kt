@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AgriExpenseEntity::class,
         ProductAdEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class SmartFarmDatabase : RoomDatabase() {
@@ -55,6 +55,39 @@ abstract class SmartFarmDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: SmartFarmDatabase? = null
+
+        private fun hasColumn(db: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean {
+            db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex).equals(columnName, ignoreCase = true)) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        private fun addColumnIfMissing(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String,
+            alterColumnDef: String
+        ) {
+            if (!hasColumn(db, tableName, columnName)) {
+                db.execSQL("ALTER TABLE `$tableName` ADD COLUMN $alterColumnDef")
+            }
+        }
+
+        private fun ensureV7AndV8SystemSettingsColumns(db: SupportSQLiteDatabase) {
+            val defaultNote = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup."
+            addColumnIfMissing(db, "system_settings", "developerName", "developerName TEXT NOT NULL DEFAULT 'Smart Farm Support Team'")
+            addColumnIfMissing(db, "system_settings", "developerPhone", "developerPhone TEXT NOT NULL DEFAULT '+8801700000000'")
+            addColumnIfMissing(db, "system_settings", "developerWhatsApp", "developerWhatsApp TEXT NOT NULL DEFAULT '+8801700000000'")
+            addColumnIfMissing(db, "system_settings", "developerEmail", "developerEmail TEXT NOT NULL DEFAULT 'support@smartfarm.app'")
+            addColumnIfMissing(db, "system_settings", "developerSupportNote", "developerSupportNote TEXT NOT NULL DEFAULT '$defaultNote'")
+            addColumnIfMissing(db, "system_settings", "adminPinHash", "adminPinHash TEXT NOT NULL DEFAULT ''")
+        }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -234,12 +267,13 @@ abstract class SmartFarmDatabase : RoomDatabase() {
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                val defaultNote = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup."
-                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerName TEXT NOT NULL DEFAULT 'Smart Farm Support Team'")
-                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerPhone TEXT NOT NULL DEFAULT '+8801700000000'")
-                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerWhatsApp TEXT NOT NULL DEFAULT '+8801700000000'")
-                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerEmail TEXT NOT NULL DEFAULT 'support@smartfarm.app'")
-                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerSupportNote TEXT NOT NULL DEFAULT '$defaultNote'")
+                ensureV7AndV8SystemSettingsColumns(db)
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                ensureV7AndV8SystemSettingsColumns(db)
             }
         }
 
@@ -250,7 +284,16 @@ abstract class SmartFarmDatabase : RoomDatabase() {
                     SmartFarmDatabase::class.java,
                     "smart_farm_management.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
+                    )
+                    .fallbackToDestructiveMigration(true)
                     .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                     .also { INSTANCE = it }

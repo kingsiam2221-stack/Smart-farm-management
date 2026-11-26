@@ -67,8 +67,7 @@ fun FarmerDashboardScreen(
     onOpenSubscription: () -> Unit,
     onOpenAiAdvisor: () -> Unit = {},
     onOpenAiAdStudio: () -> Unit = {},
-    onToggleLanguage: () -> Unit = {},
-    onSelectDarkMode: (Boolean?) -> Unit = {}
+    onOpenSettings: () -> Unit = {}
 ) {
     val isBn = isBangla()
     val policy = state.accessPolicy
@@ -166,48 +165,9 @@ fun FarmerDashboardScreen(
                             )
                         }
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(
-                                onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
-                                shape = RoundedCornerShape(50.dp),
-                                color = Color.White.copy(alpha = 0.22f),
-                                modifier = Modifier.testTag("dashboard_theme_toggle")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        themeModeIcon(darkModeOverride),
-                                        contentDescription = strings.themeMode,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        themeModeLabel(darkModeOverride),
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                            Surface(
-                                onClick = onToggleLanguage,
-                                shape = RoundedCornerShape(50.dp),
-                                color = Color.White.copy(alpha = 0.22f),
-                                modifier = Modifier.testTag("dashboard_language_toggle")
-                            ) {
-                                Text(
-                                    if (isBn) "EN" else "বাংলা",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
                             if (policy.has(AppPermission.ALERTS_CAUTION_VIEW)) {
                                 BadgedBox(
                                     badge = {
@@ -218,11 +178,18 @@ fun FarmerDashboardScreen(
                                 ) {
                                     IconButton(
                                         onClick = onOpenNotifications,
-                                        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                                        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.22f))
                                     ) {
                                         Icon(Icons.Default.Notifications, contentDescription = strings.notifications, tint = Color.White)
                                     }
                                 }
+                            }
+                            IconButton(
+                                onClick = onOpenSettings,
+                                colors = IconButtonDefaults.iconButtonColors(containerColor = Color.White.copy(alpha = 0.22f)),
+                                modifier = Modifier.testTag("dashboard_settings_button")
+                            ) {
+                                Icon(Icons.Default.Settings, contentDescription = strings.settings, tint = Color.White)
                             }
                         }
                     }

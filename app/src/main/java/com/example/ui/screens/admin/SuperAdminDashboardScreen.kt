@@ -1,5 +1,6 @@
 package com.example.ui.screens.admin
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -8,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.*
@@ -60,6 +63,12 @@ fun SuperAdminDashboardScreen(
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectCurrency: (CurrencyOption) -> Unit,
     onSelectDarkMode: (Boolean?) -> Unit,
+    onDeleteUser: (UserEntity) -> Unit = {},
+    onDeleteShopProduct: (InventoryItemEntity) -> Unit = {},
+    onDeleteProductAd: (ProductAdEntity) -> Unit = {},
+    onChangeAdminCredentials: (String, String, String, String, () -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onUpdateProfile: (String, String, String?) -> Unit = { _, _, _ -> },
+    onMessage: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
     // Hard UI-level RBAC guard matching Repository-level RBAC guard
@@ -76,6 +85,45 @@ fun SuperAdminDashboardScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showSettingsModal by remember { mutableStateOf(false) }
+
+    if (showSettingsModal) {
+        BackHandler { showSettingsModal = false }
+        @OptIn(ExperimentalMaterial3Api::class)
+        Scaffold(
+            contentWindowInsets = WindowInsets.safeDrawing,
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { showSettingsModal = false }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Back", "ফিরুন"))
+                        }
+                    },
+                    title = { Text(strings.settings, fontWeight = FontWeight.Bold) }
+                )
+            }
+        ) { padding ->
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                AppSettingsScreen(
+                    user = adminUser,
+                    systemSettings = systemSettings,
+                    strings = strings,
+                    currentLanguage = currentLanguage,
+                    currentCurrency = currentCurrency,
+                    darkModeOverride = darkModeOverride,
+                    canEditAppearance = true,
+                    onSelectLanguage = onSelectLanguage,
+                    onSelectCurrency = onSelectCurrency,
+                    onSelectDarkMode = onSelectDarkMode,
+                    onUpdateProfile = onUpdateProfile,
+                    onSaveDeveloperSettings = onSaveSettings,
+                    onChangeAdminCredentials = onChangeAdminCredentials,
+                    onMessage = onMessage,
+                    onLogout = onLogout
+                )
+            }
+        }
+        return
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isWide = maxWidth >= 600.dp
@@ -100,25 +148,11 @@ fun SuperAdminDashboardScreen(
                         }
                     },
                     actions = {
-                        TextButton(onClick = {
-                            onSelectLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
-                        }) {
-                            Text(
-                                if (currentLanguage == AppLanguage.BN) "EN" else "বাংলা",
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        IconButton(
-                            onClick = { onSelectDarkMode(nextThemeModeOverride(darkModeOverride)) },
-                            modifier = Modifier.testTag("admin_theme_toggle")
+                        FilledTonalIconButton(
+                            onClick = { showSettingsModal = true },
+                            modifier = Modifier.testTag("admin_settings_button")
                         ) {
-                            Icon(themeModeIcon(darkModeOverride), contentDescription = strings.themeMode)
-                        }
-                        IconButton(onClick = { showSettingsModal = true }) {
-                            Icon(Icons.Default.Language, contentDescription = tr("Language & Currency", "ভাষা ও মুদ্রা"))
-                        }
-                        IconButton(onClick = onLogout) {
-                            Icon(Icons.Default.Logout, contentDescription = strings.logout, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Settings, contentDescription = strings.settings)
                         }
                     }
                 )
@@ -154,7 +188,16 @@ fun SuperAdminDashboardScreen(
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     when (selectedTab) {
                         0 -> AdminOverviewTab(state, currentCurrency)
-                        1 -> AdminUsersTab(state, plans, onSetUserStatus, onGrantPlan)
+                        1 -> AdminUsersTab(
+                            state = state,
+                            plans = plans,
+                            currency = currentCurrency,
+                            onSetUserStatus = onSetUserStatus,
+                            onGrantPlan = onGrantPlan,
+                            onDeleteUser = onDeleteUser,
+                            onDeleteShopProduct = onDeleteShopProduct,
+                            onDeleteProductAd = onDeleteProductAd
+                        )
                         2 -> AdminPermissionsTab(
                             state = state,
                             strings = strings,
@@ -180,23 +223,19 @@ fun SuperAdminDashboardScreen(
                             onSetAllFeatureSubscriptions = onSetAllFeatureSubscriptions
                         )
                         4 -> AdminFinanceTab(state, currentCurrency, onUpdatePayment)
-                        else -> AdminSystemTab(state, systemSettings, onBroadcast, onSaveSettings, onResolveSupport)
+                        else -> AdminSystemTab(
+                            adminUser = adminUser,
+                            state = state,
+                            settings = systemSettings,
+                            onBroadcast = onBroadcast,
+                            onSaveSettings = onSaveSettings,
+                            onResolveSupport = onResolveSupport,
+                            onChangeAdminCredentials = onChangeAdminCredentials
+                        )
                     }
                 }
             }
         }
-    }
-
-    if (showSettingsModal) {
-        LanguageCurrencyDialog(
-            currentLanguage = currentLanguage,
-            currentCurrency = currentCurrency,
-            darkModeOverride = darkModeOverride,
-            onSelectLanguage = onSelectLanguage,
-            onSelectCurrency = onSelectCurrency,
-            onSelectDarkMode = onSelectDarkMode,
-            onDismiss = { showSettingsModal = false }
-        )
     }
 }
 
@@ -357,62 +396,245 @@ private fun AdminOverviewTab(state: SuperAdminState, currency: CurrencyOption) {
 private fun AdminUsersTab(
     state: SuperAdminState,
     plans: List<SubscriptionPlanEntity>,
+    currency: CurrencyOption,
     onSetUserStatus: (UserEntity, AccountStatus) -> Unit,
-    onGrantPlan: (UserEntity, SubscriptionPlanEntity) -> Unit
+    onGrantPlan: (UserEntity, SubscriptionPlanEntity) -> Unit,
+    onDeleteUser: (UserEntity) -> Unit,
+    onDeleteShopProduct: (InventoryItemEntity) -> Unit,
+    onDeleteProductAd: (ProductAdEntity) -> Unit
 ) {
     val isBn = isBangla()
+    var subTab by remember { mutableIntStateOf(0) } // 0 = Users / IDs, 1 = Online Shop Products & Ads
     var search by remember { mutableStateOf("") }
     var grantTarget by remember { mutableStateOf<UserEntity?>(null) }
-    val filtered = remember(state.users, search) {
+    var deleteUserTarget by remember { mutableStateOf<UserEntity?>(null) }
+    var deleteProductTarget by remember { mutableStateOf<InventoryItemEntity?>(null) }
+    var deleteAdTarget by remember { mutableStateOf<ProductAdEntity?>(null) }
+
+    val usersById = remember(state.users) { state.users.associateBy { it.id } }
+    val farmsById = remember(state.farms) { state.farms.associateBy { it.id } }
+    val shopProducts = remember(state.inventoryItems) {
+        state.inventoryItems.filter { it.listInMarketplace }
+    }
+
+    val filteredUsers = remember(state.users, search) {
         state.users.filter {
-            it.name.contains(search, true) || it.email.contains(search, true) || it.mobile.contains(search, true)
+            search.isBlank() ||
+                it.id.toString() == search.trim() ||
+                it.name.contains(search, true) ||
+                it.email.contains(search, true) ||
+                it.mobile.contains(search, true)
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item(key = "users_search") {
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                placeholder = { Text(tr("Search users by name, email, mobile...", "নাম, ইমেইল বা মোবাইল দিয়ে খুঁজুন...")) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+    val filteredProducts = remember(shopProducts, usersById, farmsById, search) {
+        shopProducts.filter { item ->
+            val owner = usersById[item.ownerUserId]
+            val farm = farmsById[item.farmId]
+            search.isBlank() ||
+                item.ownerUserId.toString() == search.trim() ||
+                item.name.contains(search, true) ||
+                item.category.contains(search, true) ||
+                (owner?.name?.contains(search, true) == true) ||
+                (owner?.email?.contains(search, true) == true) ||
+                (farm?.name?.contains(search, true) == true)
+        }
+    }
+
+    val filteredAds = remember(state.productAds, usersById, search) {
+        state.productAds.filter { ad ->
+            val owner = usersById[ad.ownerUserId]
+            search.isBlank() ||
+                ad.ownerUserId.toString() == search.trim() ||
+                ad.productName.contains(search, true) ||
+                ad.farmName.contains(search, true) ||
+                (owner?.name?.contains(search, true) == true)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(selectedTabIndex = subTab) {
+            Tab(
+                selected = subTab == 0,
+                onClick = { subTab = 0 },
+                text = { Text("${tr("Users / IDs", "ব্যবহারকারী ও আইডি")} (${state.users.size})", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                modifier = Modifier.testTag("admin_subtab_users")
+            )
+            Tab(
+                selected = subTab == 1,
+                onClick = { subTab = 1 },
+                text = { Text("${tr("Online Shop", "অনলাইন শপ")} (${shopProducts.size})", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                modifier = Modifier.testTag("admin_subtab_shop_moderation")
             )
         }
-        items(filtered, key = { "user_${it.id}" }) { u ->
-            val userFarms = state.farms.count { it.ownerUserId == u.id }
-            val userSub = state.subscriptions.firstOrNull { it.userId == u.id && it.status == "ACTIVE" }
-            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("${u.name} (${DomainLocalization.userRole(u.role, isBn)})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("${u.email} • ${u.mobile}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item(key = "users_search") {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = {
+                        Text(
+                            if (subTab == 0) tr("Search by ID, name, email, mobile...", "আইডি, নাম, ইমেইল বা মোবাইল দিয়ে খুঁজুন...")
+                            else tr("Search product, seller name or User ID...", "পণ্য, বিক্রেতার নাম বা আইডি দিয়ে খুঁজুন...")
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (search.isNotBlank()) {
+                            IconButton(onClick = { search = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = tr("Clear", "মুছুন"))
+                            }
                         }
-                        AssistChip(onClick = {}, label = { Text(DomainLocalization.accountStatus(u.status, isBn)) })
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (subTab == 0) {
+                items(filteredUsers, key = { "user_${it.id}" }) { u ->
+                    val userFarms = state.farms.count { it.ownerUserId == u.id }
+                    val userShopProducts = shopProducts.count { it.ownerUserId == u.id }
+                    val userSub = state.subscriptions.firstOrNull { it.userId == u.id && it.status == "ACTIVE" }
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${u.name} (ID #${u.id} • ${DomainLocalization.userRole(u.role, isBn)})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text("${u.email} • ${u.mobile}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                AssistChip(onClick = {}, label = { Text(DomainLocalization.accountStatus(u.status, isBn)) })
+                            }
+                            Text(
+                                "${tr("Farms", "খামার")}: $userFarms • ${tr("Online Products", "অনলাইন পণ্য")}: $userShopProducts • ${tr("Sub", "সাব")}: ${userSub?.planName ?: tr("None", "নেই")} • ${formatShortDate(u.createdAt)}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            if (u.role != UserRole.SUPER_ADMIN.name) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    item {
+                                        FilledTonalButton(onClick = { onSetUserStatus(u, AccountStatus.ACTIVE) }) { Text(tr("Activate", "সক্রিয় করুন")) }
+                                    }
+                                    item {
+                                        OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.INACTIVE) }) { Text(tr("Deactivate", "নিষ্ক্রিয়")) }
+                                    }
+                                    item {
+                                        OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.SUSPENDED) }) { Text(tr("Suspend", "স্থগিত")) }
+                                    }
+                                    item {
+                                        Button(onClick = { grantTarget = u }) { Text(tr("Assign Plan", "প্ল্যান দিন")) }
+                                    }
+                                    item {
+                                        Button(
+                                            onClick = { deleteUserTarget = u },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ),
+                                            modifier = Modifier.testTag("admin_delete_user_${u.id}")
+                                        ) {
+                                            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(tr("Delete ID & Products", "আইডি ও পণ্য মুছুন"))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Text(
-                        "${tr("Farms", "খামার")}: $userFarms • ${tr("Subscription", "সাবস্ক্রিপশন")}: ${userSub?.planName ?: tr("None", "নেই")} • ${tr("Joined", "যোগদান")} ${formatShortDate(u.createdAt)}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (u.role != UserRole.SUPER_ADMIN.name) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                FilledTonalButton(onClick = { onSetUserStatus(u, AccountStatus.ACTIVE) }) { Text(tr("Activate", "সক্রিয় করুন")) }
+                }
+            } else {
+                if (filteredProducts.isEmpty()) {
+                    item(key = "shop_mod_empty") {
+                        EmptyStateCard(
+                            icon = Icons.Default.Storefront,
+                            title = tr("No Online Shop Products Found", "অনলাইন শপে কোনো পণ্য নেই"),
+                            subtitle = tr("Any live products listed by farmers appear here for moderation.", "ব্যবহারকারীরা অনলাইন শপে কোনো পণ্য যোগ করলে তা এখানে দেখা যাবে।")
+                        )
+                    }
+                } else {
+                    items(filteredProducts, key = { "admin_shop_prod_${it.id}" }) { item ->
+                        val owner = usersById[item.ownerUserId]
+                        val farm = farmsById[item.farmId]
+                        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("${item.name} (#${item.id})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "${DomainLocalization.productCategory(item.category, isBn)} • ${tr("Stock", "মজুদ")}: ${item.quantity.toInt()} ${item.unit}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        CurrencyFormatter.format(item.sellingPrice, currency),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Text(
+                                    "${tr("Seller", "বিক্রেতা")}: ${owner?.name ?: tr("Unknown", "অজানা")} (ID #${item.ownerUserId}) • ${tr("Farm", "খামার")}: ${farm?.name ?: "-"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    item {
+                                        OutlinedButton(
+                                            onClick = { deleteProductTarget = item },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            modifier = Modifier.testTag("admin_delete_shop_product_${item.id}")
+                                        ) {
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(tr("Delete Product", "পণ্য মুছুন"))
+                                        }
+                                    }
+                                    if (owner != null && owner.role != UserRole.SUPER_ADMIN.name) {
+                                        item {
+                                            Button(
+                                                onClick = { deleteUserTarget = owner },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.error,
+                                                    contentColor = MaterialTheme.colorScheme.onError
+                                                )
+                                            ) {
+                                                Icon(Icons.Default.PersonRemove, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(tr("Delete Seller ID #${owner.id}", "বিক্রেতার আইডি #${owner.id} মুছুন"))
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            item {
-                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.INACTIVE) }) { Text(tr("Deactivate", "নিষ্ক্রিয়")) }
-                            }
-                            item {
-                                OutlinedButton(onClick = { onSetUserStatus(u, AccountStatus.SUSPENDED) }) { Text(tr("Suspend", "স্থগিত")) }
-                            }
-                            item {
-                                Button(onClick = { grantTarget = u }) { Text(tr("Assign Plan", "প্ল্যান দিন")) }
+                        }
+                    }
+                }
+
+                if (filteredAds.isNotEmpty()) {
+                    item(key = "admin_ads_header") {
+                        Spacer(Modifier.height(6.dp))
+                        Text("${tr("Shop Video Ads", "শপ ভিডিও বিজ্ঞাপন")} (${filteredAds.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                    items(filteredAds, key = { "admin_ad_${it.id}" }) { ad ->
+                        val owner = usersById[ad.ownerUserId]
+                        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("${ad.productName} • ${ad.farmName}", fontWeight = FontWeight.Bold)
+                                    Text("${tr("Owner", "মালিক")}: ${owner?.name ?: "-"} (ID #${ad.ownerUserId}) • ${ad.hookHeadlineBn}", style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                                }
+                                IconButton(
+                                    onClick = { deleteAdTarget = ad },
+                                    modifier = Modifier.testTag("admin_delete_product_ad_${ad.id}")
+                                ) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = tr("Delete Ad", "বিজ্ঞাপন মুছুন"), tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -439,6 +661,79 @@ private fun AdminUsersTab(
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { grantTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
+        )
+    }
+
+    deleteUserTarget?.let { target ->
+        val prodCount = shopProducts.count { it.ownerUserId == target.id }
+        AlertDialog(
+            onDismissRequest = { deleteUserTarget = null },
+            icon = { Icon(Icons.Default.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(tr("Delete User ID #${target.id} Completely?", "আইডি #${target.id} সম্পূর্ণ মুছে ফেলবেন?")) },
+            text = {
+                Text(
+                    tr(
+                        "This permanently deletes ${target.name} (${target.email}), all farms, $prodCount online shop product(s), video ads, and linked employee logins. This cannot be undone.",
+                        "এতে ${target.name} (${target.email})-এর অ্যাকাউন্ট, সব খামার, ${prodCount}টি অনলাইন পণ্য, বিজ্ঞাপন ও কর্মচারী লগইন স্থায়ীভাবে মুছে যাবে।"
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteUser(target)
+                        deleteUserTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("admin_confirm_delete_user_button")
+                ) { Text(tr("Delete Everything", "সম্পূর্ণ মুছুন")) }
+            },
+            dismissButton = { TextButton(onClick = { deleteUserTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
+        )
+    }
+
+    deleteProductTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteProductTarget = null },
+            icon = { Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(tr("Delete Online Product?", "অনলাইন পণ্য মুছে ফেলবেন?")) },
+            text = {
+                Text(
+                    tr(
+                        "Remove '${item.name}' and any linked video ads from the Online Shop?",
+                        "'${item.name}' এবং এর সাথে যুক্ত বিজ্ঞাপন অনলাইন শপ থেকে স্থায়ীভাবে মুছে ফেলবেন?"
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteShopProduct(item)
+                        deleteProductTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("admin_confirm_delete_product_button")
+                ) { Text(tr("Delete Product", "পণ্য মুছুন")) }
+            },
+            dismissButton = { TextButton(onClick = { deleteProductTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
+        )
+    }
+
+    deleteAdTarget?.let { ad ->
+        AlertDialog(
+            onDismissRequest = { deleteAdTarget = null },
+            title = { Text(tr("Delete Video Ad?", "ভিডিও বিজ্ঞাপন মুছবেন?")) },
+            text = { Text("${ad.productName} • ${ad.farmName}") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteProductAd(ad)
+                        deleteAdTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text(tr("Delete", "মুছুন")) }
+            },
+            dismissButton = { TextButton(onClick = { deleteAdTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
         )
     }
 }
@@ -941,14 +1236,31 @@ private fun AdminFinanceTab(
 
 @Composable
 private fun AdminSystemTab(
+    adminUser: UserEntity,
     state: SuperAdminState,
     settings: SystemSettingsEntity,
     onBroadcast: (String, String) -> Unit,
     onSaveSettings: (SystemSettingsEntity) -> Unit,
-    onResolveSupport: (SupportRequestEntity, String) -> Unit
+    onResolveSupport: (SupportRequestEntity, String) -> Unit,
+    onChangeAdminCredentials: (String, String, String, String, () -> Unit) -> Unit
 ) {
+    val isBn = isBangla()
     var banner by remember(settings.announcementBanner) { mutableStateOf(settings.announcementBanner) }
     var maint by remember(settings.maintenanceMode) { mutableStateOf(settings.maintenanceMode) }
+
+    var devName by remember(settings.developerName) { mutableStateOf(settings.developerName) }
+    var devPhone by remember(settings.developerPhone) { mutableStateOf(settings.developerPhone) }
+    var devWhatsApp by remember(settings.developerWhatsApp) { mutableStateOf(settings.developerWhatsApp) }
+    var devEmail by remember(settings.developerEmail) { mutableStateOf(settings.developerEmail) }
+    var devNote by remember(settings.developerSupportNote) { mutableStateOf(settings.developerSupportNote) }
+
+    var currentAdminPass by remember { mutableStateOf("") }
+    var newAdminEmail by remember(adminUser.email) { mutableStateOf(adminUser.email) }
+    var newAdminPass by remember { mutableStateOf("") }
+    var confirmAdminPass by remember { mutableStateOf("") }
+    var newSecurityPin by remember { mutableStateOf("") }
+    var securityError by remember { mutableStateOf<String?>(null) }
+
     var bTitle by remember { mutableStateOf("") }
     var bMsg by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<SupportRequestEntity?>(null) }
@@ -970,6 +1282,165 @@ private fun AdminSystemTab(
                     }
                     Button(onClick = { onSaveSettings(settings.copy(announcementBanner = banner, maintenanceMode = maint)) }) {
                         Text(tr("Save Settings", "সেটিংস সংরক্ষণ"))
+                    }
+                }
+            }
+        }
+
+        item(key = "sys_dev_contact") {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.SupportAgent, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            tr("Developer / Company Support Contact (Shown in Settings)", "ডেভেলপার ও কোম্পানি যোগাযোগ তথ্য (সেটিংসে দেখাবে)"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    OutlinedTextField(
+                        value = devName,
+                        onValueChange = { devName = it },
+                        label = { Text(tr("Developer / Company Name", "ডেভেলপার / কোম্পানির নাম")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = devPhone,
+                        onValueChange = { devPhone = it },
+                        label = { Text(tr("Support Mobile Number (Call)", "সাপোর্ট মোবাইল নম্বর (কল)")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_dev_phone_input")
+                    )
+                    OutlinedTextField(
+                        value = devWhatsApp,
+                        onValueChange = { devWhatsApp = it },
+                        label = { Text(tr("WhatsApp Number", "হোয়াটসঅ্যাপ নম্বর")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_dev_whatsapp_input")
+                    )
+                    OutlinedTextField(
+                        value = devEmail,
+                        onValueChange = { devEmail = it },
+                        label = { Text(tr("Support Email", "সাপোর্ট ইমেইল")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = devNote,
+                        onValueChange = { devNote = it },
+                        label = { Text(tr("Support Note / Instructions", "সাপোর্ট বার্তা")) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            onSaveSettings(
+                                settings.copy(
+                                    developerName = devName.trim(),
+                                    developerPhone = devPhone.trim(),
+                                    developerWhatsApp = devWhatsApp.trim(),
+                                    developerEmail = devEmail.trim(),
+                                    developerSupportNote = devNote.trim()
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("admin_save_dev_contact_button")
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Save Developer Contact", "ডেভেলপার যোগাযোগ সংরক্ষণ করুন"), fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        item(key = "sys_admin_security") {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Text(
+                            tr("Super Admin Password & Security PIN", "সুপার অ্যাডমিন পাসওয়ার্ড ও সিকিউরিটি পিন"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        tr(
+                            "Rotate your login password, admin email, or Developer Security PIN so unauthorized users cannot enter.",
+                            "অন্য কেউ যেন লগইন করতে না পারে সেজন্য আপনার পাসওয়ার্ড, অ্যাডমিন ইমেইল বা সিকিউরিটি পিন পরিবর্তন করুন।"
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    securityError?.let { err ->
+                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedTextField(
+                        value = currentAdminPass,
+                        onValueChange = { currentAdminPass = it; securityError = null },
+                        label = { Text(tr("Current Password *", "বর্তমান পাসওয়ার্ড *")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_current_password_input")
+                    )
+                    OutlinedTextField(
+                        value = newAdminEmail,
+                        onValueChange = { newAdminEmail = it; securityError = null },
+                        label = { Text(tr("Super Admin Email", "সুপার অ্যাডমিন ইমেইল")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newAdminPass,
+                        onValueChange = { newAdminPass = it; securityError = null },
+                        label = { Text(tr("New Password (min 6 chars)", "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_new_password_input")
+                    )
+                    OutlinedTextField(
+                        value = confirmAdminPass,
+                        onValueChange = { confirmAdminPass = it; securityError = null },
+                        label = { Text(tr("Confirm New Password", "নতুন পাসওয়ার্ড নিশ্চিত করুন")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_confirm_password_input")
+                    )
+                    OutlinedTextField(
+                        value = newSecurityPin,
+                        onValueChange = { newSecurityPin = it; securityError = null },
+                        label = { Text(tr("New Developer Security PIN (optional, min 4 digits)", "নতুন সিকিউরিটি পিন (ঐচ্ছিক, কমপক্ষে ৪ অক্ষর)")) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("admin_new_pin_input")
+                    )
+                    Button(
+                        onClick = {
+                            if (currentAdminPass.isBlank()) {
+                                securityError = if (isBn) "বর্তমান সুপার অ্যাডমিন পাসওয়ার্ড দিন।" else "Enter current Super Admin password."
+                            } else if (newAdminPass.isNotBlank() && newAdminPass != confirmAdminPass) {
+                                securityError = if (isBn) "নতুন পাসওয়ার্ড দুটি মেলেনি।" else "New passwords do not match."
+                            } else {
+                                onChangeAdminCredentials(currentAdminPass, newAdminEmail, newAdminPass, newSecurityPin) {
+                                    currentAdminPass = ""
+                                    newAdminPass = ""
+                                    confirmAdminPass = ""
+                                    newSecurityPin = ""
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("admin_change_credentials_button")
+                    ) {
+                        Icon(Icons.Default.Password, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(tr("Update Admin Password & PIN", "পাসওয়ার্ড ও পিন আপডেট করুন"), fontWeight = FontWeight.Bold)
                     }
                 }
             }

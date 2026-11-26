@@ -59,15 +59,19 @@ fun ProductAdVideoPlayer(
 
     val tts = remember {
         var instance: TextToSpeech? = null
-        instance = TextToSpeech(context.applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val bnBd = Locale("bn", "BD")
-                val res = instance?.setLanguage(bnBd)
-                if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    instance?.setLanguage(Locale("bn", "IN"))
+        runCatching {
+            instance = TextToSpeech(context.applicationContext) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    runCatching {
+                        val bnBd = Locale("bn", "BD")
+                        val res = instance?.setLanguage(bnBd)
+                        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            instance?.setLanguage(Locale("bn", "IN"))
+                        }
+                        instance?.setSpeechRate(0.95f)
+                        ttsReady = true
+                    }
                 }
-                instance?.setSpeechRate(0.95f)
-                ttsReady = true
             }
         }
         instance
@@ -75,8 +79,8 @@ fun ProductAdVideoPlayer(
 
     DisposableEffect(tts) {
         onDispose {
-            runCatching { tts.stop() }
-            runCatching { tts.shutdown() }
+            runCatching { tts?.stop() }
+            runCatching { tts?.shutdown() }
         }
     }
 
@@ -88,16 +92,18 @@ fun ProductAdVideoPlayer(
     }
 
     LaunchedEffect(isPlaying, voiceEnabled, ttsReady, storyboard.voiceoverScriptBn) {
-        if (ttsReady) {
+        if (ttsReady && tts != null) {
             if (isPlaying && voiceEnabled && storyboard.voiceoverScriptBn.isNotBlank()) {
-                tts.speak(
-                    storyboard.voiceoverScriptBn,
-                    TextToSpeech.QUEUE_FLUSH,
-                    null,
-                    "product_ad_${storyboard.hashCode()}"
-                )
+                runCatching {
+                    tts.speak(
+                        storyboard.voiceoverScriptBn,
+                        TextToSpeech.QUEUE_FLUSH,
+                        null,
+                        "product_ad_${storyboard.hashCode()}"
+                    )
+                }
             } else {
-                tts.stop()
+                runCatching { tts.stop() }
             }
         }
     }
@@ -630,13 +636,15 @@ fun ProductAdVideoPlayer(
                 onClick = {
                     elapsedMs = 0L
                     isPlaying = true
-                    if (ttsReady && voiceEnabled && storyboard.voiceoverScriptBn.isNotBlank()) {
-                        tts.speak(
-                            storyboard.voiceoverScriptBn,
-                            TextToSpeech.QUEUE_FLUSH,
-                            null,
-                            "product_ad_replay_${System.currentTimeMillis()}"
-                        )
+                    if (ttsReady && tts != null && voiceEnabled && storyboard.voiceoverScriptBn.isNotBlank()) {
+                        runCatching {
+                            tts.speak(
+                                storyboard.voiceoverScriptBn,
+                                TextToSpeech.QUEUE_FLUSH,
+                                null,
+                                "product_ad_replay_${System.currentTimeMillis()}"
+                            )
+                        }
                     }
                 }
             ) {
