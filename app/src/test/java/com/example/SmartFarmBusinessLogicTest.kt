@@ -1,12 +1,17 @@
 package com.example
 
 import android.content.Context
+import android.content.Intent
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.example.ai.AdVideoMp4Exporter
+import com.example.ai.BengaliAdStoryboard
+import com.example.ai.SharePlatform
 import com.example.data.local.*
 import com.example.data.repository.FarmRepository
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -613,7 +618,9 @@ class SmartFarmBusinessLogicTest {
             .addMigrations(
                 SmartFarmDatabase.MIGRATION_1_2,
                 SmartFarmDatabase.MIGRATION_2_3,
-                SmartFarmDatabase.MIGRATION_3_4
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6
             )
             .allowMainThreadQueries()
             .build()
@@ -802,7 +809,9 @@ class SmartFarmBusinessLogicTest {
             .addMigrations(
                 SmartFarmDatabase.MIGRATION_1_2,
                 SmartFarmDatabase.MIGRATION_2_3,
-                SmartFarmDatabase.MIGRATION_3_4
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6
             )
             .allowMainThreadQueries()
             .build()
@@ -1054,7 +1063,9 @@ class SmartFarmBusinessLogicTest {
             .addMigrations(
                 SmartFarmDatabase.MIGRATION_1_2,
                 SmartFarmDatabase.MIGRATION_2_3,
-                SmartFarmDatabase.MIGRATION_3_4
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6
             )
             .allowMainThreadQueries()
             .build()
@@ -1257,5 +1268,437 @@ class SmartFarmBusinessLogicTest {
         // Verify pausing wheat removes it from marketplace
         repo.setOnlineProductVisibility(wheatItem, isLive = false, actorUserId = agroSellerA.id).getOrThrow()
         assertTrue(repo.observeMarketplaceItemsFiltered("Wheat", null, 30).first().isEmpty())
+    }
+
+    @Test
+    fun agricultureLedger_tracksCropsLandsSectorExpensesYieldWorthProfitLossAndPermissions() = runTest {
+        repo.initializeDatabase()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val karimUser = repo.login("karim@smartfarm.app", "employee123").getOrThrow()
+        val karimEmp = repo.observeEmployees(farmer.id).first().first { it.linkedUserId == karimUser.id }
+
+        // Employee without AGRICULTURE_MANAGE cannot create a land plot
+        repo.setEmployeePermission(farmer.id, karimEmp, AppPermission.AGRICULTURE_MANAGE.key, false).getOrThrow()
+        val deniedLand = repo.saveAgriLand(
+            AgriLandEntity(ownerUserId = farmer.id, name = "Unauthorized Plot", areaSize = 50.0),
+            actorUserId = karimUser.id
+        )
+        assertTrue(deniedLand.isFailure)
+        assertTrue(deniedLand.exceptionOrNull() is SecurityException)
+
+        // Farmer grants AGRICULTURE_MANAGE -> employee can now add a new land plot
+        repo.setEmployeePermission(farmer.id, karimEmp, AppPermission.AGRICULTURE_MANAGE.key, true).getOrThrow()
+        val testPlotId = repo.saveAgriLand(
+            AgriLandEntity(
+                ownerUserId = farmer.id,
+                name = "South Maize & Wheat Plot",
+                areaSize = 100.0,
+                areaUnit = AgriLandUnit.DECIMAL.key,
+                location = "Bogra South"
+            ),
+            actorUserId = karimUser.id
+        ).getOrThrow()
+
+        // Create Corn & Cattle Feed crops on this plot
+        val cornCropId = repo.saveAgriCrop(
+            AgriCropEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropType = AgriCropType.CORN.key,
+                title = "Boro Corn Batch",
+                season = AgriSeason.RABI.key
+            ),
+            actorUserId = karimUser.id
+        ).getOrThrow()
+
+        val feedCropId = repo.saveAgriCrop(
+            AgriCropEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropType = AgriCropType.CATTLE_FEED.key,
+                title = "Napier Cattle Feed",
+                season = AgriSeason.YEAR_ROUND.key
+            ),
+            actorUserId = karimUser.id
+        ).getOrThrow()
+
+        // Record sector-wise expenses across Seeds, Fertilizer, Irrigation, and Labor
+        repo.addAgriExpense(
+            AgriExpenseEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropId = cornCropId,
+                sector = AgriSector.SEEDS.key,
+                amount = 3000.0,
+                description = "Hybrid corn seeds"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+        repo.addAgriExpense(
+            AgriExpenseEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropId = cornCropId,
+                sector = AgriSector.FERTILIZER.key,
+                amount = 4500.0,
+                description = "Urea & Potash"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+        repo.addAgriExpense(
+            AgriExpenseEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropId = feedCropId,
+                sector = AgriSector.IRRIGATION.key,
+                amount = 1500.0,
+                description = "Fodder irrigation"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+        repo.addAgriExpense(
+            AgriExpenseEntity(
+                ownerUserId = farmer.id,
+                landId = testPlotId,
+                cropId = null,
+                sector = AgriSector.LABOR.key,
+                amount = 2000.0,
+                description = "Land bund & clearing"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        // Record Harvest & Yield Market Worth on Corn (20 mon * 1,100 = 22,000 worth) and Cattle Feed (worth 5,000)
+        val cornCrop = db.agriDao().getCropById(cornCropId)!!
+        repo.recordAgriHarvest(
+            crop = cornCrop,
+            yieldQuantity = 20.0,
+            yieldUnit = "mon",
+            marketPricePerUnit = 1100.0,
+            yieldMarketWorth = 0.0,
+            soldAmount = 18000.0,
+            status = AgriCropStatus.SOLD.key,
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val feedCrop = db.agriDao().getCropById(feedCropId)!!
+        repo.recordAgriHarvest(
+            crop = feedCrop,
+            yieldQuantity = 500.0,
+            yieldUnit = "kg",
+            marketPricePerUnit = 10.0,
+            yieldMarketWorth = 0.0,
+            soldAmount = 0.0,
+            status = AgriCropStatus.HARVESTED.key,
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val allLands = repo.observeAgriLands(farmer.id).first()
+        val allCrops = repo.observeAgriCrops(farmer.id).first()
+        val allExpenses = repo.observeAgriExpenses(farmer.id).first()
+
+        val plot = allLands.first { it.id == testPlotId }
+        val landSummary = AgriLedgerCalculator.summarizeLand(plot, allCrops, allExpenses)
+        // Total spent on plot = 3000 + 4500 + 1500 + 2000 = 11,000; cost per decimal = 110.0
+        assertEquals(11000.0, landSummary.totalSpent, 0.01)
+        assertEquals(110.0, landSummary.costPerUnitArea, 0.01)
+        // Yield worth = (20 * 1100 = 22000) + (500 * 10 = 5000) = 27,000
+        assertEquals(27000.0, landSummary.totalYieldWorth, 0.01)
+        // Effective return = soldAmount(18000) + feed yieldWorth(5000) = 23000 -> Net profit = 23000 - 11000 = 12000
+        assertEquals(12000.0, landSummary.profitOrLoss, 0.01)
+        assertEquals(3000.0, landSummary.sectorTotals[AgriSector.SEEDS.key]!!, 0.01)
+        assertEquals(4500.0, landSummary.sectorTotals[AgriSector.FERTILIZER.key]!!, 0.01)
+
+        // Employee without AGRICULTURE_DELETE cannot delete plot
+        repo.setEmployeePermission(farmer.id, karimEmp, AppPermission.AGRICULTURE_DELETE.key, false).getOrThrow()
+        val deniedDelete = repo.deleteAgriLand(plot, actorUserId = karimUser.id)
+        assertTrue(deniedDelete.isFailure)
+        assertTrue(deniedDelete.exceptionOrNull() is SecurityException)
+
+        // Farmer deletes plot -> crops & expenses on that plot cascade delete cleanly
+        repo.deleteAgriLand(plot, actorUserId = farmer.id).getOrThrow()
+        assertTrue(repo.observeAgriLands(farmer.id).first().none { it.id == testPlotId })
+        assertTrue(repo.observeAgriCrops(farmer.id).first().none { it.landId == testPlotId })
+        assertTrue(repo.observeAgriExpenses(farmer.id).first().none { it.landId == testPlotId })
+    }
+
+    @Test
+    fun roomMigration_v4ToV5_addsAgricultureTablesAndPreservesExistingData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v4_v5_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (1, 'v4 Farmer', '01711111111', 'farmer@smartfarm.app', '${PasswordHasher.hash("farmer123")}', 'FARMER', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val landId = migratedRepo.saveAgriLand(
+                AgriLandEntity(ownerUserId = 1L, name = "Migrated Paddy Land", areaSize = 60.0),
+                actorUserId = 1L
+            ).getOrThrow()
+            val cropId = migratedRepo.saveAgriCrop(
+                AgriCropEntity(ownerUserId = 1L, landId = landId, cropType = AgriCropType.WHEAT.key, title = "Wheat Plot 1"),
+                actorUserId = 1L
+            ).getOrThrow()
+            migratedRepo.addAgriExpense(
+                AgriExpenseEntity(
+                    ownerUserId = 1L,
+                    landId = landId,
+                    cropId = cropId,
+                    sector = AgriSector.SEEDS.key,
+                    amount = 1200.0,
+                    description = "Wheat Seeds"
+                ),
+                actorUserId = 1L
+            ).getOrThrow()
+            assertEquals(1, migratedRepo.observeAgriLands(1L).first().size)
+            assertEquals(1, migratedRepo.observeAgriCrops(1L).first().size)
+            assertEquals(1, migratedRepo.observeAgriExpenses(1L).first().size)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun productAdStudio_savesPublishesTogglesDeletesAndEnforcesPermissions() = runTest {
+        repo.initializeDatabase()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val farmId = repo.observeFarms(farmer.id).first().first().id
+        val riceId = repo.saveInventoryItem(
+            InventoryItemEntity(
+                farmId = farmId,
+                ownerUserId = farmer.id,
+                name = "Kataribhog Rice",
+                category = "Rice",
+                quantity = 120.0,
+                unit = "kg",
+                unitCost = 65.0,
+                sellingPrice = 88.0,
+                listInMarketplace = true,
+                description = "Aromatic dinajpur rice",
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+            ),
+            actorUserId = farmer.id
+        )
+
+        // Blank headline must fail cleanly
+        val invalid = repo.saveProductAd(
+            ProductAdEntity(
+                ownerUserId = farmer.id,
+                farmId = farmId,
+                inventoryItemId = riceId,
+                productName = "Kataribhog Rice",
+                farmName = "Green Valley Agro",
+                priceText = "৳88 / kg",
+                hookHeadlineBn = "   ",
+                promoBadgeBn = "তাজা",
+                benefitsPipeSeparatedBn = "১|২|৩",
+                callToActionBn = "এখনই অর্ডার করুন",
+                voiceoverScriptBn = "স্ক্রিপ্ট",
+                orderStepsPipeSeparatedBn = "ধাপ ১|ধাপ ২",
+                isActiveInShop = true
+            ),
+            actorUserId = farmer.id
+        )
+        assertTrue(invalid.isFailure)
+
+        val adId = repo.saveProductAd(
+            ProductAdEntity(
+                ownerUserId = farmer.id,
+                farmId = farmId,
+                inventoryItemId = riceId,
+                productName = "Kataribhog Rice",
+                farmName = "Green Valley Agro",
+                priceText = "৳88 / kg",
+                hookHeadlineBn = "সরাসরি খামার থেকে সুগন্ধি কাটারিভোগ চাল!",
+                promoBadgeBn = "সরাসরি খামার থেকে তাজা",
+                benefitsPipeSeparatedBn = "১০০% খাঁটি|রাসায়নিকমুক্ত|সারা দেশে ডেলিভারি",
+                callToActionBn = "এখনই অর্ডার করুন • এখানে ক্লিক করুন",
+                voiceoverScriptBn = "খাঁটি কাটারিভোগ চাল অর্ডার করতে এখনই এখানে ক্লিক করুন!",
+                orderStepsPipeSeparatedBn = "১. পণ্য বাছুন|২. এখানে ক্লিক করুন|৩. ঠিকানা দিন|৪. অর্ডার কনফার্ম",
+                isActiveInShop = true
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val ownerAds = repo.observeProductAds(farmer.id).first()
+        assertEquals(1, ownerAds.size)
+        assertEquals(adId, ownerAds.first().id)
+        assertTrue(repo.observeActiveShopAds().first().any { it.id == adId })
+
+        // Unpublish from marketplace -> hidden from customer active ads, still owned by farmer
+        val savedAd = ownerAds.first()
+        repo.toggleProductAdActive(savedAd, active = false, actorUserId = farmer.id).getOrThrow()
+        assertTrue(repo.observeActiveShopAds().first().none { it.id == adId })
+        assertFalse(repo.observeProductAds(farmer.id).first().first().isActiveInShop)
+
+        // Permissions & subscription defaults
+        assertTrue(PermissionPreset.MANAGER.keys.contains(AppPermission.AI_AD_STUDIO.key))
+        assertTrue(PermissionPreset.SALES_CASHIER.keys.contains(AppPermission.AI_AD_STUDIO.key))
+        assertFalse(PermissionPreset.POULTRY_WORKER.keys.contains(AppPermission.AI_AD_STUDIO.key))
+        assertFalse(SubscriptionFeature.DEFAULT_LOCKED_KEYS.contains(SubscriptionFeature.AI_AD_VIDEO_STUDIO.key))
+
+        // Delete removes ad cleanly
+        repo.deleteProductAd(savedAd, actorUserId = farmer.id).getOrThrow()
+        assertTrue(repo.observeProductAds(farmer.id).first().isEmpty())
+    }
+
+    @Test
+    fun roomMigration_v5ToV6_addsProductAdsTableAndPreservesExistingData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v5_v6_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (1, 'v5 Farmer', '01711111111', 'farmer@smartfarm.app', '${PasswordHasher.hash("farmer123")}', 'FARMER', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val adId = migratedRepo.saveProductAd(
+                ProductAdEntity(
+                    ownerUserId = 1L,
+                    farmId = 0L,
+                    inventoryItemId = null,
+                    productName = "সরিষার তেল",
+                    farmName = "Smart Farm",
+                    priceText = "৳280 / L",
+                    hookHeadlineBn = "১০০% খাঁটি ঘানি ভাঙা সরিষার তেল",
+                    promoBadgeBn = "সেরা মানের পণ্য",
+                    benefitsPipeSeparatedBn = "খাঁটি|ভেজালমুক্ত|তাজা",
+                    callToActionBn = "এখনই অর্ডার করুন",
+                    voiceoverScriptBn = "খাঁটি সরিষার তেল কিনতে এখানে ক্লিক করুন।",
+                    orderStepsPipeSeparatedBn = "১. বেছে নিন|২. ক্লিক করুন",
+                    isActiveInShop = true
+                ),
+                actorUserId = 1L
+            ).getOrThrow()
+            assertEquals(1, migratedRepo.observeProductAds(1L).first().size)
+            assertTrue(migratedRepo.observeActiveShopAds().first().any { it.id == adId })
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun productAdOutroAndMultiPlatformShare_persistsGuideAndBuildsIntents() = runTest {
+        repo.initializeDatabase()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val customOutro = "Google Play থেকে Smart Farm অ্যাপ নামান, ফ্রি অ্যাকাউন্ট খুলে বিকাশ/নগদ দিয়ে অর্ডার করুন!"
+        val storyboard = BengaliAdStoryboard(
+            productName = "দিনাজপুরের লিচু",
+            farmName = "বরেন্দ্র এগ্রো",
+            priceText = "৳250 / ১০০ পিস",
+            hookHeadlineBn = "সরাসরি বাগান থেকে রসালো মিষ্টি লিচু!",
+            promoBadgeBn = "সিজনাল ফ্রেশ",
+            benefitsBn = listOf("ফরমালিনমুক্ত", "মিষ্টি স্বাদ", "সারা দেশে ডেলিভারি"),
+            callToActionBn = "এখনই অর্ডার করুন • এখানে ক্লিক করুন",
+            voiceoverScriptBn = "তাজা লিচু খেতে অ্যাপ ডাউনলোড করে অনলাইনে অর্ডার করুন!",
+            orderStepsBn = BengaliAdStoryboard.defaultOrderSteps(),
+            accentColorHex = "#2E7D32",
+            downloadAndOrderOutroBn = customOutro
+        )
+
+        val entity = storyboard.toEntity(
+            ownerUserId = farmer.id,
+            farmId = 0L,
+            inventoryItemId = null,
+            imageUri = null,
+            isActiveInShop = true
+        )
+        val savedId = repo.saveProductAd(entity, actorUserId = farmer.id).getOrThrow()
+        val loaded = repo.observeProductAds(farmer.id).first().first { it.id == savedId }
+        val roundtrip = BengaliAdStoryboard.fromEntity(loaded)
+
+        assertEquals(customOutro, roundtrip.downloadAndOrderOutroBn)
+        assertEquals(4, roundtrip.orderStepsBn.size)
+
+        val caption = AdVideoMp4Exporter.buildShareCaption(roundtrip)
+        assertTrue(caption.contains(customOutro))
+        assertTrue(caption.contains("এখনই অর্ডার করুন"))
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val dummyMp4 = File(exportDir, "test_share_ad.mp4").apply { writeBytes(byteArrayOf(0, 1, 2, 3)) }
+        try {
+            SharePlatform.entries.forEach { platform ->
+                val intent = AdVideoMp4Exporter.createTargetedShareVideoIntent(
+                    context = context,
+                    mp4File = dummyMp4,
+                    storyboard = roundtrip,
+                    platform = platform
+                )
+                assertNotNull(intent)
+                val targetAction = if (intent.action == Intent.ACTION_CHOOSER) {
+                    val inner = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                    assertNotNull(inner)
+                    assertEquals("video/mp4", inner!!.type)
+                    assertEquals(caption, inner.getStringExtra(Intent.EXTRA_TEXT))
+                    intent.action
+                } else {
+                    assertEquals("video/mp4", intent.type)
+                    assertEquals(caption, intent.getStringExtra(Intent.EXTRA_TEXT))
+                    intent.action
+                }
+                assertTrue(targetAction == Intent.ACTION_SEND || targetAction == Intent.ACTION_CHOOSER)
+            }
+        } finally {
+            dummyMp4.delete()
+        }
     }
 }

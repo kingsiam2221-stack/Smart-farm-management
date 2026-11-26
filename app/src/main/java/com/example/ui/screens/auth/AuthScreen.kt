@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +30,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
 import com.example.R
+import com.example.auth.GoogleSignInButton
+import com.example.auth.attemptAutoSignIn
 import com.example.data.local.UserRole
 import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
@@ -38,6 +42,7 @@ import com.example.ui.components.LanguageCurrencyDialog
 import com.example.ui.components.nextThemeModeOverride
 import com.example.ui.components.themeModeIcon
 import com.example.ui.components.themeModeLabel
+import com.google.firebase.auth.FirebaseUser
 
 private enum class AuthScreenMode {
     CUSTOMER_LOGIN,
@@ -59,11 +64,26 @@ fun AuthScreen(
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String, String, UserRole) -> Unit,
     onResetPassword: (String, String, () -> Unit) -> Unit,
+    onGoogleSignInSuccess: (FirebaseUser, UserRole) -> Unit,
+    onGoogleSignInError: (String) -> Unit,
     onSelectLanguage: (AppLanguage) -> Unit,
     onSelectCurrency: (CurrencyOption) -> Unit,
     onSelectDarkMode: (Boolean?) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
     var authMode by remember { mutableStateOf(AuthScreenMode.CUSTOMER_LOGIN) }
+
+    LaunchedEffect(Unit) {
+        attemptAutoSignIn(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
+            onUnauthenticated = {},
+            scope = scope
+        )
+    }
 
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -429,6 +449,14 @@ fun AuthScreen(
                                             Spacer(Modifier.width(8.dp))
                                             Text(if (isBangla) "গ্রাহক ডেমো দেখুন" else "Try Customer Demo")
                                         }
+
+                                        HorizontalDivider()
+
+                                        GoogleSignInButton(
+                                            label = if (isBangla) "গুগল দিয়ে সাইন ইন (ক্লাউড সিঙ্ক)" else "Sign in with Google",
+                                            onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
+                                            onAuthError = onGoogleSignInError
+                                        )
                                     }
                                 }
 
@@ -706,6 +734,12 @@ fun AuthScreen(
                                             Text(if (isBangla) "নতুন খামারি" else "Make Farmer")
                                         }
                                     }
+
+                                    GoogleSignInButton(
+                                        label = if (isBangla) "গুগল দিয়ে খামারি লগইন" else "Sign in with Google (Farm Business)",
+                                        onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.FARMER) },
+                                        onAuthError = onGoogleSignInError
+                                    )
                                 }
                             }
                         }

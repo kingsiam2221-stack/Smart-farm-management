@@ -10,6 +10,7 @@ enum class PermissionGroup(val titleEn: String, val titleBn: String) {
     EMPLOYEES("Employees & Payroll", "কর্মচারী ও বেতন"),
     SALES_CRM("Sales, Customers & Orders", "বিক্রয়, গ্রাহক ও অর্ডার"),
     ONLINE_STORE("Online Product Storefront", "অনলাইন পণ্য ও বিক্রি"),
+    AGRICULTURE("Agriculture, Crops & Land", "কৃষি, ফসল ও জমির হিসাব"),
     GUIDE("Farming Guide", "পালন গাইড"),
     REPORTS_SYSTEM("Reports, Subscription & Caution", "রিপোর্ট, সাবস্ক্রিপশন ও সতর্কতা"),
     CUSTOM("Custom Added Options", "নতুন যোগকৃত অপশন")
@@ -46,6 +47,14 @@ enum class AppPermission(
         titleBn = "স্মার্ট ফার্ম এআই উপদেষ্টা",
         descEn = "Ask Gemini AI Advisor & run farm audits",
         descBn = "এআই উপদেষ্টাকে প্রশ্ন ও ফার্ম অডিট চালানো"
+    ),
+    AI_AD_STUDIO(
+        key = "AI_AD_STUDIO",
+        group = PermissionGroup.DASHBOARD_AI,
+        titleEn = "AI Product Video Ad Studio",
+        titleBn = "AI পণ্য বিজ্ঞাপন ও ভিডিও স্টুডিও",
+        descEn = "Create Bengali AI product ad videos & order demos",
+        descBn = "পণ্যের ছবি দিয়ে বাংলায় AI বিজ্ঞাপন ও অর্ডার ভিডিও তৈরি"
     ),
     FARMS_VIEW(
         key = "FARMS_VIEW",
@@ -255,6 +264,30 @@ enum class AppPermission(
         descEn = "Add rice, wheat, mustard or any agri product for sale",
         descBn = "চাল, গম, সরিষা বা যেকোনো কৃষি পণ্য অনলাইনে বিক্রি করা"
     ),
+    AGRICULTURE_VIEW(
+        key = "AGRICULTURE_VIEW",
+        group = PermissionGroup.AGRICULTURE,
+        titleEn = "View Agriculture, Crops & Land Ledger",
+        titleBn = "কৃষি, ফসল ও জমির হিসাব দেখা",
+        descEn = "View rice, wheat, corn, cattle feed, land costs & profit/loss",
+        descBn = "ধান, গম, ভুট্টা, গোখাদ্য, জমির খরচ ও লাভ-ক্ষতি দেখা"
+    ),
+    AGRICULTURE_MANAGE(
+        key = "AGRICULTURE_MANAGE",
+        group = PermissionGroup.AGRICULTURE,
+        titleEn = "Add & Edit Lands, Crops & Sector Expenses",
+        titleBn = "জমি, ফসল ও খাতভিত্তিক খরচ যোগ",
+        descEn = "Record land plots, crop harvests, yield worth & sector costs",
+        descBn = "নতুন জমি, ফসল, ফলনের মূল্য ও খাতভিত্তিক খরচ সংরক্ষণ"
+    ),
+    AGRICULTURE_DELETE(
+        key = "AGRICULTURE_DELETE",
+        group = PermissionGroup.AGRICULTURE,
+        titleEn = "Delete Land, Crop & Agri Expense Records",
+        titleBn = "কৃষি, জমি ও ফসলের রেকর্ড মুছে ফেলা",
+        descEn = "Remove saved land plots, crops or agriculture expense entries",
+        descBn = "সংরক্ষিত জমি, ফসল বা কৃষি খরচের হিসাব মুছে ফেলা"
+    ),
     FARM_GUIDE_VIEW(
         key = "FARM_GUIDE_VIEW",
         group = PermissionGroup.GUIDE,
@@ -324,6 +357,7 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.DASHBOARD_OVERVIEW.key,
             AppPermission.DASHBOARD_CHARTS.key,
             AppPermission.AI_ADVISOR.key,
+            AppPermission.AI_AD_STUDIO.key,
             AppPermission.FARMS_VIEW.key,
             AppPermission.LIVESTOCK_VIEW.key,
             AppPermission.LIVESTOCK_CREATE_EDIT.key,
@@ -343,6 +377,8 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.ORDERS_MANAGE.key,
             AppPermission.ONLINE_PRODUCTS_VIEW.key,
             AppPermission.ONLINE_PRODUCTS_MANAGE.key,
+            AppPermission.AGRICULTURE_VIEW.key,
+            AppPermission.AGRICULTURE_MANAGE.key,
             AppPermission.FARM_GUIDE_VIEW.key,
             AppPermission.REPORTS_VIEW_EXPORT.key,
             AppPermission.ALERTS_CAUTION_VIEW.key
@@ -376,7 +412,8 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.ORDERS_VIEW.key,
             AppPermission.ORDERS_MANAGE.key,
             AppPermission.ONLINE_PRODUCTS_VIEW.key,
-            AppPermission.ONLINE_PRODUCTS_MANAGE.key
+            AppPermission.ONLINE_PRODUCTS_MANAGE.key,
+            AppPermission.AI_AD_STUDIO.key
         )
     ),
     VIEW_ONLY(
@@ -389,6 +426,7 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.EGGS_VIEW.key,
             AppPermission.INVENTORY_VIEW.key,
             AppPermission.SALES_VIEW.key,
+            AppPermission.AGRICULTURE_VIEW.key,
             AppPermission.FARM_GUIDE_VIEW.key
         )
     )

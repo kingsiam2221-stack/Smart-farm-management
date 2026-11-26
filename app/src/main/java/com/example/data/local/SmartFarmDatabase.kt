@@ -30,9 +30,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AdminAuditLogEntity::class,
         SystemSettingsEntity::class,
         EmployeePermissionEntity::class,
-        CustomPermissionOptionEntity::class
+        CustomPermissionOptionEntity::class,
+        AgriLandEntity::class,
+        AgriCropEntity::class,
+        AgriExpenseEntity::class,
+        ProductAdEntity::class
     ],
-    version = 4,
+    version = 7,
     exportSchema = false
 )
 abstract class SmartFarmDatabase : RoomDatabase() {
@@ -45,6 +49,8 @@ abstract class SmartFarmDatabase : RoomDatabase() {
     abstract fun operationsDao(): OperationsDao
     abstract fun subscriptionAndAdminDao(): SubscriptionAndAdminDao
     abstract fun permissionDao(): PermissionDao
+    abstract fun agriDao(): AgriDao
+    abstract fun productAdDao(): ProductAdDao
 
     companion object {
         @Volatile
@@ -120,6 +126,123 @@ abstract class SmartFarmDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `agri_lands` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ownerUserId` INTEGER NOT NULL,
+                        `farmId` INTEGER,
+                        `name` TEXT NOT NULL,
+                        `areaSize` REAL NOT NULL,
+                        `areaUnit` TEXT NOT NULL,
+                        `location` TEXT NOT NULL,
+                        `soilOrLandType` TEXT NOT NULL,
+                        `notes` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_lands_ownerUserId` ON `agri_lands` (`ownerUserId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_lands_farmId` ON `agri_lands` (`farmId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `agri_crops` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ownerUserId` INTEGER NOT NULL,
+                        `farmId` INTEGER,
+                        `landId` INTEGER NOT NULL,
+                        `cropType` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `variety` TEXT NOT NULL,
+                        `season` TEXT NOT NULL,
+                        `plantingDate` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `yieldQuantity` REAL NOT NULL,
+                        `yieldUnit` TEXT NOT NULL,
+                        `marketPricePerUnit` REAL NOT NULL,
+                        `yieldMarketWorth` REAL NOT NULL,
+                        `soldAmount` REAL NOT NULL,
+                        `notes` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`landId`) REFERENCES `agri_lands`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_crops_ownerUserId` ON `agri_crops` (`ownerUserId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_crops_landId` ON `agri_crops` (`landId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_crops_farmId` ON `agri_crops` (`farmId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `agri_expenses` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ownerUserId` INTEGER NOT NULL,
+                        `farmId` INTEGER,
+                        `landId` INTEGER NOT NULL,
+                        `cropId` INTEGER,
+                        `sector` TEXT NOT NULL,
+                        `customSectorName` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `expenseDate` INTEGER NOT NULL,
+                        FOREIGN KEY(`landId`) REFERENCES `agri_lands`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_expenses_ownerUserId` ON `agri_expenses` (`ownerUserId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_expenses_landId` ON `agri_expenses` (`landId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_expenses_cropId` ON `agri_expenses` (`cropId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agri_expenses_expenseDate` ON `agri_expenses` (`expenseDate`)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `product_ads` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ownerUserId` INTEGER NOT NULL,
+                        `farmId` INTEGER NOT NULL,
+                        `inventoryItemId` INTEGER,
+                        `productName` TEXT NOT NULL,
+                        `farmName` TEXT NOT NULL,
+                        `priceText` TEXT NOT NULL,
+                        `imageUri` TEXT,
+                        `hookHeadlineBn` TEXT NOT NULL,
+                        `promoBadgeBn` TEXT NOT NULL,
+                        `benefitsPipeSeparatedBn` TEXT NOT NULL,
+                        `callToActionBn` TEXT NOT NULL,
+                        `voiceoverScriptBn` TEXT NOT NULL,
+                        `orderStepsPipeSeparatedBn` TEXT NOT NULL,
+                        `accentColorHex` TEXT NOT NULL,
+                        `isActiveInShop` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_product_ads_ownerUserId` ON `product_ads` (`ownerUserId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_product_ads_farmId` ON `product_ads` (`farmId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_product_ads_inventoryItemId` ON `product_ads` (`inventoryItemId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_product_ads_isActiveInShop_createdAt` ON `product_ads` (`isActiveInShop`, `createdAt`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val defaultNote = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup."
+                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerName TEXT NOT NULL DEFAULT 'Smart Farm Support Team'")
+                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerPhone TEXT NOT NULL DEFAULT '+8801700000000'")
+                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerWhatsApp TEXT NOT NULL DEFAULT '+8801700000000'")
+                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerEmail TEXT NOT NULL DEFAULT 'support@smartfarm.app'")
+                db.execSQL("ALTER TABLE system_settings ADD COLUMN developerSupportNote TEXT NOT NULL DEFAULT '$defaultNote'")
+            }
+        }
+
         fun getInstance(context: Context): SmartFarmDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -127,7 +250,7 @@ abstract class SmartFarmDatabase : RoomDatabase() {
                     SmartFarmDatabase::class.java,
                     "smart_farm_management.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                     .also { INSTANCE = it }

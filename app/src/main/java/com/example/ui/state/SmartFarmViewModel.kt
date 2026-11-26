@@ -39,7 +39,11 @@ data class FarmerDashboardState(
     val supportRequests: List<SupportRequestEntity> = emptyList(),
     val employeePermissions: List<EmployeePermissionEntity> = emptyList(),
     val customPermissionOptions: List<CustomPermissionOptionEntity> = emptyList(),
-    val subscriptionPolicy: SubscriptionAccessPolicy = SubscriptionAccessPolicy()
+    val subscriptionPolicy: SubscriptionAccessPolicy = SubscriptionAccessPolicy(),
+    val agriLands: List<AgriLandEntity> = emptyList(),
+    val agriCrops: List<AgriCropEntity> = emptyList(),
+    val agriExpenses: List<AgriExpenseEntity> = emptyList(),
+    val productAds: List<ProductAdEntity> = emptyList()
 )
 
 data class CustomerPortalState(
@@ -51,7 +55,9 @@ data class CustomerPortalState(
     val pageSizeLimit: Int = 30,
     val farmsById: Map<Long, FarmEntity> = emptyMap(),
     val cart: List<CartEntry> = emptyList(),
-    val orders: List<OrderEntity> = emptyList()
+    val orders: List<OrderEntity> = emptyList(),
+    val activeShopAds: List<ProductAdEntity> = emptyList(),
+    val supportRequests: List<SupportRequestEntity> = emptyList()
 )
 
 data class SuperAdminState(
@@ -189,7 +195,15 @@ class SmartFarmViewModel(
             ) { perms, customOpts, policy, settings ->
                 Tuple4(perms, customOpts, policy, settings)
             }
-            combine(f1, f2, f3, f4) { base, t2, t3, t4 ->
+            val f5 = combine(
+                repository.observeAgriLands(ownerId),
+                repository.observeAgriCrops(ownerId),
+                repository.observeAgriExpenses(ownerId),
+                repository.observeProductAds(ownerId)
+            ) { lands, crops, agriExp, ads ->
+                Tuple4(lands, crops, agriExp, ads)
+            }
+            combine(f1, f2, f3, f4, f5) { base, t2, t3, t4, t5 ->
                 base.copy(
                     accessPolicy = t4.c,
                     inventory = t2.a,
@@ -204,7 +218,11 @@ class SmartFarmViewModel(
                     supportRequests = t3.e,
                     employeePermissions = t4.a,
                     customPermissionOptions = t4.b,
-                    subscriptionPolicy = SubscriptionAccessPolicy.fromSettingsAndSubs(t4.d, t3.d)
+                    subscriptionPolicy = SubscriptionAccessPolicy.fromSettingsAndSubs(t4.d, t3.d),
+                    agriLands = t5.a,
+                    agriCrops = t5.b,
+                    agriExpenses = t5.c,
+                    productAds = t5.d
                 )
             }
         }
@@ -230,12 +248,13 @@ class SmartFarmViewModel(
         if (user == null || user.role != UserRole.CUSTOMER.name) {
             flowOf(CustomerPortalState())
         } else {
-            combine(
+            val baseShopFlow = combine(
                 marketplaceFeedFlow,
                 repository.observeMarketplaceFarms(),
                 _cart,
-                repository.observeCustomerOrders(user.id)
-            ) { feed, farms, cart, orders ->
+                repository.observeCustomerOrders(user.id),
+                repository.observeActiveShopAds()
+            ) { feed, farms, cart, orders, ads ->
                 CustomerPortalState(
                     marketplaceItems = feed.a,
                     availableCategories = feed.b,
@@ -245,8 +264,12 @@ class SmartFarmViewModel(
                     pageSizeLimit = feed.d.third,
                     farmsById = farms.associateBy { it.id },
                     cart = cart,
-                    orders = orders
+                    orders = orders,
+                    activeShopAds = ads
                 )
+            }
+            combine(baseShopFlow, repository.observeUserSupport(user.id)) { state, tickets ->
+                state.copy(supportRequests = tickets)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CustomerPortalState())
@@ -337,9 +360,18 @@ class SmartFarmViewModel(
             "Cart is empty." -> "কার্ট খালি আছে।"
             "Delivery address is required." -> "ডেলিভারি ঠিকানা প্রয়োজন।"
             "Access denied: You don't have permission for this option." -> "অনুমতি নেই: এই অপশনের অ্যাক্সেস আপনার নেই।"
+            "Land plot name is required." -> "জমির নাম দেওয়া আবশ্যক।"
+            "Land area cannot be negative." -> "জমির পরিমাণ ঋণাত্মক হতে পারবে না।"
+            "Crop title is required." -> "ফসলের নাম দেওয়া আবশ্যক।"
+            "Please select a valid land plot first." -> "প্রথমে একটি বৈধ জমি নির্বাচন করুন।"
+            "Please select a valid land plot." -> "একটি বৈধ জমি নির্বাচন করুন।"
+            "Expense amount must be greater than zero." -> "খরচের পরিমাণ ০-এর বেশি হতে হবে।"
+            "Ad headline is required." -> "বিজ্ঞাপনের শিরোনাম আবশ্যক।"
             else -> when {
                 raw?.startsWith("Subscription required:") == true ->
                     "এই অপশনটি ব্যবহার করতে সক্রিয় সাবস্ক্রিপশন প্রয়োজন।"
+                raw?.startsWith("Permission denied:") == true ->
+                    "অনুমতি নেই: অ্যাডমিন এই অপশনের অ্যাক্সেস বন্ধ রেখেছেন।"
                 raw?.endsWith("is currently paused or out of stock.") == true ->
                     "এই পণ্যটি বর্তমানে বন্ধ আছে বা স্টকে নেই।"
                 raw?.endsWith("is no longer available.") == true ->
@@ -392,6 +424,31 @@ class SmartFarmViewModel(
                 }
                 .onFailure { _authError.value = localizeError(it.message, "Reset failed.", "পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে।") }
         }
+    }
+
+    fun onGoogleAuthenticated(
+        displayName: String,
+        email: String,
+        preferredRole: UserRole = UserRole.CUSTOMER
+    ) {
+        viewModelScope.launch {
+            _authError.value = null
+            repository.signInWithGoogleProfile(displayName, email, preferredRole)
+                .onSuccess { user ->
+                    prefsRepo.setCurrentUserId(user.id)
+                    prefsRepo.setCurrency(user.preferredCurrency)
+                    repository.checkExpiredSubscriptions()
+                    _snackbarMessage.value = msg(
+                        "Signed in with Google as ${user.name}.",
+                        "গুগল অ্যাকাউন্টে লগইন সম্পন্ন হয়েছে: ${user.name}।"
+                    )
+                }
+                .onFailure { _authError.value = localizeError(it.message, "Google Sign-In failed.", "গুগল লগইন ব্যর্থ হয়েছে।") }
+        }
+    }
+
+    fun setAuthErrorMessage(message: String) {
+        _authError.value = message
     }
 
     fun logout() {
@@ -817,6 +874,202 @@ class SmartFarmViewModel(
             runPermitted { _, actor ->
                 repository.deleteExpense(expense, actorUserId = actor)
             }
+        }
+    }
+
+    // --- Agriculture, Lands, Crops & Sector Expenses ---
+    fun saveAgriLand(land: AgriLandEntity) {
+        val ownerId = effectiveOwnerId() ?: return
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.saveAgriLand(land.copy(ownerUserId = ownerId), actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Land plot '${land.name.trim()}' saved.",
+                        "জমি '${land.name.trim()}' সংরক্ষিত হয়েছে।"
+                    )
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Could not save land plot.", "জমি সংরক্ষণ করা যায়নি।")
+                }
+        }
+    }
+
+    fun deleteAgriLand(land: AgriLandEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteAgriLand(land, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Land plot '${land.name}' removed.",
+                        "জমি '${land.name}' মুছে ফেলা হয়েছে।"
+                    )
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Action denied.", "অনুমতি নেই।")
+                }
+        }
+    }
+
+    fun saveAgriCrop(crop: AgriCropEntity) {
+        val ownerId = effectiveOwnerId() ?: return
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.saveAgriCrop(crop.copy(ownerUserId = ownerId), actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Crop '${crop.title.trim()}' saved.",
+                        "ফসল '${crop.title.trim()}' সংরক্ষিত হয়েছে।"
+                    )
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Could not save crop.", "ফসল সংরক্ষণ করা যায়নি।")
+                }
+        }
+    }
+
+    fun recordAgriHarvest(
+        crop: AgriCropEntity,
+        yieldQuantity: Double,
+        yieldUnit: String,
+        marketPricePerUnit: Double,
+        yieldMarketWorth: Double,
+        soldAmount: Double,
+        status: String
+    ) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.recordAgriHarvest(
+                crop = crop,
+                yieldQuantity = yieldQuantity,
+                yieldUnit = yieldUnit,
+                marketPricePerUnit = marketPricePerUnit,
+                yieldMarketWorth = yieldMarketWorth,
+                soldAmount = soldAmount,
+                status = status,
+                actorUserId = actor
+            ).onSuccess {
+                _snackbarMessage.value = msg(
+                    "Harvest & yield value updated for '${crop.title}'.",
+                    "'${crop.title}' এর ফলন ও বাজার মূল্য আপডেট হয়েছে।"
+                )
+            }.onFailure {
+                _snackbarMessage.value = localizeError(it.message, "Could not update harvest.", "ফলনের তথ্য আপডেট করা যায়নি।")
+            }
+        }
+    }
+
+    fun deleteAgriCrop(crop: AgriCropEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteAgriCrop(crop, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg(
+                        "Crop '${crop.title}' removed.",
+                        "ফসল '${crop.title}' মুছে ফেলা হয়েছে।"
+                    )
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Action denied.", "অনুমতি নেই।")
+                }
+        }
+    }
+
+    fun addAgriExpense(
+        landId: Long,
+        cropId: Long?,
+        farmId: Long?,
+        sector: String,
+        customSectorName: String,
+        amount: Double,
+        description: String
+    ) {
+        val ownerId = effectiveOwnerId() ?: return
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.addAgriExpense(
+                AgriExpenseEntity(
+                    ownerUserId = ownerId,
+                    farmId = farmId,
+                    landId = landId,
+                    cropId = cropId,
+                    sector = sector,
+                    customSectorName = customSectorName,
+                    amount = amount,
+                    description = description
+                ),
+                actorUserId = actor
+            ).onSuccess {
+                val secLabel = DomainLocalization.agriSector(sector, customSectorName, isBn())
+                _snackbarMessage.value = msg(
+                    "Agriculture expense recorded ($secLabel).",
+                    "কৃষি খরচ সংরক্ষিত হয়েছে ($secLabel)।"
+                )
+            }.onFailure {
+                _snackbarMessage.value = localizeError(it.message, "Could not record expense.", "খরচ সংরক্ষণ করা যায়নি।")
+            }
+        }
+    }
+
+    fun deleteAgriExpense(expense: AgriExpenseEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteAgriExpense(expense, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg("Expense deleted.", "খরচ মুছে ফেলা হয়েছে।")
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Action denied.", "অনুমতি নেই।")
+                }
+        }
+    }
+
+    // --- AI Product Ads ---
+    fun saveProductAd(ad: ProductAdEntity, onSaved: (Long) -> Unit = {}) {
+        val ownerId = effectiveOwnerId() ?: return
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.saveProductAd(ad.copy(ownerUserId = ownerId), actorUserId = actor)
+                .onSuccess { id ->
+                    _snackbarMessage.value = msg(
+                        "Ad saved & published for '${ad.productName.trim()}'!",
+                        "'${ad.productName.trim()}' এর বিজ্ঞাপন সংরক্ষণ ও প্রকাশিত হয়েছে!"
+                    )
+                    onSaved(id)
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Could not save ad.", "বিজ্ঞাপন সংরক্ষণ করা যায়নি।")
+                }
+        }
+    }
+
+    fun toggleProductAdActive(ad: ProductAdEntity, active: Boolean) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.toggleProductAdActive(ad, active, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = if (active) {
+                        msg("Ad for '${ad.productName}' is now LIVE in Shop!", "'${ad.productName}' বিজ্ঞাপন এখন মার্কেটপ্লেসে চালু আছে!")
+                    } else {
+                        msg("Ad for '${ad.productName}' paused.", "'${ad.productName}' বিজ্ঞাপন বিরতিতে রাখা হয়েছে।")
+                    }
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Action denied.", "অনুমতি নেই।")
+                }
+        }
+    }
+
+    fun deleteProductAd(ad: ProductAdEntity) {
+        val actor = actorId() ?: return
+        viewModelScope.launch {
+            repository.deleteProductAd(ad, actorUserId = actor)
+                .onSuccess {
+                    _snackbarMessage.value = msg("Ad removed.", "বিজ্ঞাপন মুছে ফেলা হয়েছে।")
+                }
+                .onFailure {
+                    _snackbarMessage.value = localizeError(it.message, "Action denied.", "অনুমতি নেই।")
+                }
         }
     }
 

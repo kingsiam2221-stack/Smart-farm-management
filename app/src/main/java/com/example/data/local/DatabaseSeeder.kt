@@ -855,6 +855,125 @@ object DatabaseSeeder {
             )
         )
 
+        // Seed Agriculture Lands, Crops (Rice, Wheat, Corn, Cattle Feed) & Sector Expenses
+        val agriDao = db.agriDao()
+        val land1Id = agriDao.insertLand(
+            AgriLandEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                name = "North Paddy Field (Plot A)",
+                areaSize = 65.0,
+                areaUnit = AgriLandUnit.DECIMAL.key,
+                location = "Bhawal North Block",
+                soilOrLandType = "Alluvial Loam",
+                notes = "Main irrigated rice & wheat land"
+            )
+        )
+        val land2Id = agriDao.insertLand(
+            AgriLandEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                name = "Riverbank Fodder & Corn Plot",
+                areaSize = 45.0,
+                areaUnit = AgriLandUnit.DECIMAL.key,
+                location = "Sirajganj Riverbank",
+                soilOrLandType = "Sandy Loam",
+                notes = "Napier cattle fodder, corn & wheat rotation"
+            )
+        )
+        val riceCropId = agriDao.insertCrop(
+            AgriCropEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                landId = land1Id,
+                cropType = AgriCropType.RICE.key,
+                title = "BRRI Dhan-28 (Boro Rice)",
+                variety = "BRRI-28",
+                season = AgriSeason.BORO.key,
+                plantingDate = now - 110 * DAY_MS,
+                status = AgriCropStatus.HARVESTED.key,
+                yieldQuantity = 38.0,
+                yieldUnit = "mon",
+                marketPricePerUnit = 1_350.0,
+                yieldMarketWorth = 51_300.0,
+                soldAmount = 51_300.0,
+                notes = "Strong yield with balanced potash & urea"
+            )
+        )
+        val fodderCropId = agriDao.insertCrop(
+            AgriCropEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                landId = land2Id,
+                cropType = AgriCropType.CATTLE_FEED.key,
+                title = "Pakchong Napier Cattle Feed",
+                variety = "Pakchong-1",
+                season = AgriSeason.YEAR_ROUND.key,
+                plantingDate = now - 75 * DAY_MS,
+                status = AgriCropStatus.HARVESTED.key,
+                yieldQuantity = 3_200.0,
+                yieldUnit = "kg",
+                marketPricePerUnit = 10.0,
+                yieldMarketWorth = 32_000.0,
+                soldAmount = 0.0,
+                notes = "Used for Dairy Cow herd (saved feed cost)"
+            )
+        )
+        val cornCropId = agriDao.insertCrop(
+            AgriCropEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                landId = land2Id,
+                cropType = AgriCropType.CORN.key,
+                title = "Hybrid Yellow Corn",
+                variety = "NK-40",
+                season = AgriSeason.RABI.key,
+                plantingDate = now - 35 * DAY_MS,
+                status = AgriCropStatus.GROWING.key,
+                yieldQuantity = 0.0,
+                yieldUnit = "mon",
+                marketPricePerUnit = 1_150.0,
+                yieldMarketWorth = 0.0,
+                soldAmount = 0.0,
+                notes = "Growing phase — irrigation scheduled"
+            )
+        )
+        val wheatCropId = agriDao.insertCrop(
+            AgriCropEntity(
+                ownerUserId = farmerId,
+                farmId = farm3Id,
+                landId = land1Id,
+                cropType = AgriCropType.WHEAT.key,
+                title = "BARI Gom-33 Wheat",
+                variety = "BARI Gom-33",
+                season = AgriSeason.RABI.key,
+                plantingDate = now - 95 * DAY_MS,
+                status = AgriCropStatus.SOLD.key,
+                yieldQuantity = 22.0,
+                yieldUnit = "mon",
+                marketPricePerUnit = 1_500.0,
+                yieldMarketWorth = 33_000.0,
+                soldAmount = 34_200.0,
+                notes = "Sold directly after threshing"
+            )
+        )
+        listOf(
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = riceCropId, sector = AgriSector.TILLAGE.key, amount = 4_200.0, description = "Tractor plowing & leveling", expenseDate = now - 108 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = riceCropId, sector = AgriSector.SEEDS.key, amount = 2_800.0, description = "BRRI-28 certified seedlings", expenseDate = now - 105 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = riceCropId, sector = AgriSector.FERTILIZER.key, amount = 6_400.0, description = "Urea, TSP & MoP basal + top dress", expenseDate = now - 85 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = riceCropId, sector = AgriSector.IRRIGATION.key, amount = 5_100.0, description = "Shallow pump irrigation cycles", expenseDate = now - 60 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = riceCropId, sector = AgriSector.LABOR.key, amount = 8_500.0, description = "Transplanting, weeding & harvesting labor", expenseDate = now - 20 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = wheatCropId, sector = AgriSector.SEEDS.key, amount = 3_100.0, description = "BARI Gom-33 seed", expenseDate = now - 94 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = wheatCropId, sector = AgriSector.FERTILIZER.key, amount = 4_900.0, description = "DAP, Urea & Boron", expenseDate = now - 78 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land1Id, cropId = wheatCropId, sector = AgriSector.HARVEST_TRANSPORT.key, amount = 4_400.0, description = "Threshing machine & bag transport", expenseDate = now - 15 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = fodderCropId, sector = AgriSector.SEEDS.key, amount = 2_500.0, description = "Napier stem cuttings", expenseDate = now - 74 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = fodderCropId, sector = AgriSector.LABOR.key, amount = 4_800.0, description = "Planting & green fodder cutting", expenseDate = now - 25 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = fodderCropId, sector = AgriSector.FERTILIZER.key, amount = 3_200.0, description = "Organic cow-dung & urea", expenseDate = now - 45 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = cornCropId, sector = AgriSector.SEEDS.key, amount = 2_400.0, description = "Hybrid NK-40 corn seed", expenseDate = now - 34 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = cornCropId, sector = AgriSector.PESTICIDE.key, amount = 1_600.0, description = "Fall armyworm spray", expenseDate = now - 18 * DAY_MS),
+            AgriExpenseEntity(ownerUserId = farmerId, farmId = farm2Id, landId = land2Id, cropId = null, sector = AgriSector.LAND_RENT.key, amount = 6_000.0, description = "Seasonal plot lease share", expenseDate = now - 80 * DAY_MS)
+        ).forEach { agriDao.insertExpense(it) }
+
         subDao.saveSystemSettings(SystemSettingsEntity())
     }
 

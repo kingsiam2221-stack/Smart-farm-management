@@ -503,7 +503,12 @@ data class SystemSettingsEntity(
     val bankAccountNumber: String = "123-456-7890123",
     val bankBranch: String = "Dhaka Main Branch",
     val paymentInstructions: String = "Send plan fee to the Developer bKash, Nagad, or Bank Account shown and enter your TrxID / Reference.",
-    val requireAdminApprovalForAll: Boolean = false
+    val requireAdminApprovalForAll: Boolean = false,
+    val developerName: String = "Smart Farm Support Team",
+    val developerPhone: String = "+8801700000000",
+    val developerWhatsApp: String = "+8801700000000",
+    val developerEmail: String = "support@smartfarm.app",
+    val developerSupportNote: String = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup."
 )
 
 @Entity(
@@ -542,3 +547,284 @@ data class CustomPermissionOptionEntity(
     val descriptionBn: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
+
+// --- Agriculture, Crop, Land Plot & Sector Expense Ledger ---
+
+enum class AgriCropType(val key: String, val labelEn: String, val labelBn: String) {
+    RICE("Rice", "Rice / Paddy", "ধান / চাল"),
+    WHEAT("Wheat", "Wheat", "গম"),
+    CORN("Corn", "Corn / Maize", "ভুট্টা"),
+    CATTLE_FEED("Cattle Feed", "Cattle Feed / Fodder", "গোখাদ্য / ঘাস"),
+    MUSTARD("Mustard", "Mustard", "সরিষা"),
+    POTATO("Potato", "Potato", "আলু"),
+    JUTE("Jute", "Jute", "পাট"),
+    VEGETABLES("Vegetables", "Vegetables", "শাকসবজি"),
+    PULSES("Pulses", "Pulses & Lentils", "ডাল শস্য"),
+    OTHER("Other Crop", "Other Crop", "অন্যান্য ফসল");
+
+    companion object {
+        fun fromKey(key: String): AgriCropType = entries.firstOrNull { it.key.equals(key, ignoreCase = true) || it.name.equals(key, ignoreCase = true) } ?: OTHER
+    }
+}
+
+enum class AgriLandUnit(val key: String, val labelEn: String, val labelBn: String) {
+    DECIMAL("Decimal", "Decimal", "শতাংশ"),
+    BIGHA("Bigha", "Bigha", "বিঘা"),
+    KATHA("Katha", "Katha", "কাঠা"),
+    ACRE("Acre", "Acre", "একর"),
+    HECTARE("Hectare", "Hectare", "হেক্টর");
+
+    companion object {
+        fun fromKey(key: String): AgriLandUnit = entries.firstOrNull { it.key.equals(key, ignoreCase = true) || it.name.equals(key, ignoreCase = true) } ?: DECIMAL
+    }
+}
+
+enum class AgriSector(val key: String, val labelEn: String, val labelBn: String) {
+    SEEDS("SEEDS", "Seeds & Seedlings", "বীজ ও চারা"),
+    FERTILIZER("FERTILIZER", "Fertilizer & Manure", "সার ও জৈব সার"),
+    PESTICIDE("PESTICIDE", "Pesticide & Medicine", "কীটনাশক ও ওষুধ"),
+    IRRIGATION("IRRIGATION", "Irrigation & Water", "সেচ ও পানি"),
+    LABOR("LABOR", "Labor & Workers", "শ্রমিক মজুরি"),
+    TILLAGE("TILLAGE", "Tillage & Tractor", "হালচাষ ও ট্রাক্টর"),
+    LAND_RENT("LAND_RENT", "Land Rent / Lease", "জমির ভাড়া / লিজ"),
+    HARVEST_TRANSPORT("HARVEST_TRANSPORT", "Harvest & Transport", "কাটা, মাড়াই ও পরিবহন"),
+    OTHER("OTHER", "Other Sector", "অন্যান্য খাত");
+
+    companion object {
+        fun fromKey(key: String): AgriSector = entries.firstOrNull { it.key.equals(key, ignoreCase = true) || it.name.equals(key, ignoreCase = true) } ?: OTHER
+    }
+}
+
+enum class AgriCropStatus(val key: String, val labelEn: String, val labelBn: String) {
+    GROWING("GROWING", "Growing", "চাষাবাদ চলছে"),
+    HARVESTED("HARVESTED", "Harvested", "ফসল তোলা হয়েছে"),
+    SOLD("SOLD", "Sold / Closed", "বিক্রি সম্পন্ন");
+
+    companion object {
+        fun fromKey(key: String): AgriCropStatus = entries.firstOrNull { it.key.equals(key, ignoreCase = true) || it.name.equals(key, ignoreCase = true) } ?: GROWING
+    }
+}
+
+enum class AgriSeason(val key: String, val labelEn: String, val labelBn: String) {
+    BORO("Boro", "Boro (Winter-Spring)", "বোরো মৌসুম"),
+    AMAN("Aman", "Aman (Monsoon)", "আমন মৌসুম"),
+    AUS("Aus", "Aus (Summer)", "আউশ মৌসুম"),
+    RABI("Rabi", "Rabi (Winter)", "রবি মৌসুম"),
+    KHARIF("Kharif", "Kharif", "খরিপ মৌসুম"),
+    YEAR_ROUND("Year-Round", "Year-Round", "সারা বছর");
+
+    companion object {
+        fun fromKey(key: String): AgriSeason = entries.firstOrNull { it.key.equals(key, ignoreCase = true) || it.name.equals(key, ignoreCase = true) } ?: RABI
+    }
+}
+
+@Entity(
+    tableName = "agri_lands",
+    indices = [Index("ownerUserId"), Index("farmId")]
+)
+data class AgriLandEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long? = null,
+    val name: String,
+    val areaSize: Double = 0.0,
+    val areaUnit: String = AgriLandUnit.DECIMAL.key,
+    val location: String = "",
+    val soilOrLandType: String = "",
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "agri_crops",
+    foreignKeys = [
+        ForeignKey(entity = AgriLandEntity::class, parentColumns = ["id"], childColumns = ["landId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index("ownerUserId"), Index("landId"), Index("farmId")]
+)
+data class AgriCropEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long? = null,
+    val landId: Long,
+    val cropType: String = AgriCropType.RICE.key,
+    val title: String,
+    val variety: String = "",
+    val season: String = AgriSeason.BORO.key,
+    val plantingDate: Long = System.currentTimeMillis(),
+    val status: String = AgriCropStatus.GROWING.key,
+    val yieldQuantity: Double = 0.0,
+    val yieldUnit: String = "mon",
+    val marketPricePerUnit: Double = 0.0,
+    val yieldMarketWorth: Double = 0.0,
+    val soldAmount: Double = 0.0,
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "agri_expenses",
+    foreignKeys = [
+        ForeignKey(entity = AgriLandEntity::class, parentColumns = ["id"], childColumns = ["landId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [Index("ownerUserId"), Index("landId"), Index("cropId"), Index("expenseDate")]
+)
+data class AgriExpenseEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long? = null,
+    val landId: Long,
+    val cropId: Long? = null,
+    val sector: String = AgriSector.SEEDS.key,
+    val customSectorName: String = "",
+    val amount: Double,
+    val description: String = "",
+    val expenseDate: Long = System.currentTimeMillis()
+)
+
+data class AgriCropSummary(
+    val crop: AgriCropEntity,
+    val totalSpent: Double,
+    val yieldWorth: Double,
+    val effectiveReturn: Double,
+    val profitOrLoss: Double,
+    val sectorTotals: Map<String, Double>
+)
+
+data class AgriLandSummary(
+    val land: AgriLandEntity,
+    val cropsCount: Int,
+    val totalSpent: Double,
+    val totalYieldWorth: Double,
+    val totalSoldRevenue: Double,
+    val effectiveReturn: Double,
+    val profitOrLoss: Double,
+    val costPerUnitArea: Double,
+    val sectorTotals: Map<String, Double>
+)
+
+data class AgriOverviewSummary(
+    val totalLands: Int,
+    val totalCrops: Int,
+    val totalSpent: Double,
+    val totalYieldWorth: Double,
+    val totalSoldRevenue: Double,
+    val effectiveReturn: Double,
+    val netProfitOrLoss: Double,
+    val sectorTotals: Map<String, Double>
+)
+
+object AgriLedgerCalculator {
+    fun resolveYieldWorth(crop: AgriCropEntity): Double {
+        return if (crop.yieldMarketWorth > 0.0) {
+            crop.yieldMarketWorth
+        } else {
+            (crop.yieldQuantity.coerceAtLeast(0.0) * crop.marketPricePerUnit.coerceAtLeast(0.0))
+        }
+    }
+
+    fun resolveEffectiveReturn(crop: AgriCropEntity): Double {
+        val worth = resolveYieldWorth(crop)
+        return when {
+            crop.soldAmount > 0.0 -> crop.soldAmount
+            worth > 0.0 -> worth
+            else -> 0.0
+        }
+    }
+
+    fun summarizeCrop(crop: AgriCropEntity, expenses: List<AgriExpenseEntity>): AgriCropSummary {
+        val cropExpenses = expenses.filter { it.cropId == crop.id }
+        val spent = cropExpenses.sumOf { it.amount }
+        val worth = resolveYieldWorth(crop)
+        val ret = resolveEffectiveReturn(crop)
+        val sectors = cropExpenses.groupBy { it.sector }.mapValues { (_, list) -> list.sumOf { it.amount } }
+        return AgriCropSummary(
+            crop = crop,
+            totalSpent = spent,
+            yieldWorth = worth,
+            effectiveReturn = ret,
+            profitOrLoss = ret - spent,
+            sectorTotals = sectors
+        )
+    }
+
+    fun summarizeLand(
+        land: AgriLandEntity,
+        crops: List<AgriCropEntity>,
+        expenses: List<AgriExpenseEntity>
+    ): AgriLandSummary {
+        val landCrops = crops.filter { it.landId == land.id }
+        val landExpenses = expenses.filter { it.landId == land.id }
+        val spent = landExpenses.sumOf { it.amount }
+        val yieldWorth = landCrops.sumOf { resolveYieldWorth(it) }
+        val sold = landCrops.sumOf { it.soldAmount }
+        val effectiveRet = landCrops.sumOf { resolveEffectiveReturn(it) }
+        val costPerUnit = if (land.areaSize > 0.0) spent / land.areaSize else 0.0
+        val sectors = landExpenses.groupBy { it.sector }.mapValues { (_, list) -> list.sumOf { it.amount } }
+        return AgriLandSummary(
+            land = land,
+            cropsCount = landCrops.size,
+            totalSpent = spent,
+            totalYieldWorth = yieldWorth,
+            totalSoldRevenue = sold,
+            effectiveReturn = effectiveRet,
+            profitOrLoss = effectiveRet - spent,
+            costPerUnitArea = costPerUnit,
+            sectorTotals = sectors
+        )
+    }
+
+    fun summarizeOverview(
+        lands: List<AgriLandEntity>,
+        crops: List<AgriCropEntity>,
+        expenses: List<AgriExpenseEntity>
+    ): AgriOverviewSummary {
+        val totalSpent = expenses.sumOf { it.amount }
+        val yieldWorth = crops.sumOf { resolveYieldWorth(it) }
+        val sold = crops.sumOf { it.soldAmount }
+        val effectiveRet = crops.sumOf { resolveEffectiveReturn(it) }
+        val sectors = expenses.groupBy { it.sector }.mapValues { (_, list) -> list.sumOf { it.amount } }
+        return AgriOverviewSummary(
+            totalLands = lands.size,
+            totalCrops = crops.size,
+            totalSpent = totalSpent,
+            totalYieldWorth = yieldWorth,
+            totalSoldRevenue = sold,
+            effectiveReturn = effectiveRet,
+            netProfitOrLoss = effectiveRet - totalSpent,
+            sectorTotals = sectors
+        )
+    }
+}
+
+@Entity(
+    tableName = "product_ads",
+    indices = [
+        Index("ownerUserId"),
+        Index("farmId"),
+        Index("inventoryItemId"),
+        Index(value = ["isActiveInShop", "createdAt"])
+    ]
+)
+data class ProductAdEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long = 0L,
+    val inventoryItemId: Long? = null,
+    val productName: String,
+    val farmName: String = "",
+    val priceText: String = "",
+    val imageUri: String? = null,
+    val hookHeadlineBn: String,
+    val promoBadgeBn: String = "১০০% খাঁটি",
+    val benefitsPipeSeparatedBn: String,
+    val callToActionBn: String = "এখনই অর্ডার করুন • এখানে ক্লিক করুন",
+    val voiceoverScriptBn: String,
+    val orderStepsPipeSeparatedBn: String,
+    val accentColorHex: String = "#1B5E20",
+    val isActiveInShop: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+

@@ -59,12 +59,14 @@ fun FarmerDashboardScreen(
     onOpenSales: () -> Unit,
     onOpenOrders: () -> Unit = onOpenSales,
     onOpenOnlineProducts: () -> Unit = {},
+    onOpenAgriculture: () -> Unit = {},
     onOpenInventory: () -> Unit = onOpenFarms,
     onOpenPermissions: () -> Unit = {},
     onOpenGuide: () -> Unit = {},
     onOpenNotifications: () -> Unit,
     onOpenSubscription: () -> Unit,
     onOpenAiAdvisor: () -> Unit = {},
+    onOpenAiAdStudio: () -> Unit = {},
     onToggleLanguage: () -> Unit = {},
     onSelectDarkMode: (Boolean?) -> Unit = {}
 ) {
@@ -291,6 +293,7 @@ fun FarmerDashboardScreen(
 
         // Quick Actions Row (only permitted actions)
         val showAnyQuickAction = policy.canManagePermissions() ||
+            policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE) ||
             policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE) ||
             policy.has(AppPermission.AI_ADVISOR) ||
             policy.has(AppPermission.FARM_GUIDE_VIEW) ||
@@ -301,6 +304,16 @@ fun FarmerDashboardScreen(
         if (showAnyQuickAction) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE)) {
+                        item {
+                            QuickActionPill(
+                                Icons.Default.Grass,
+                                strings.agriculture,
+                                onOpenAgriculture,
+                                testTag = "dashboard_agriculture_pill"
+                            )
+                        }
+                    }
                     if (policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE)) {
                         item {
                             QuickActionPill(
@@ -319,6 +332,11 @@ fun FarmerDashboardScreen(
                     if (policy.has(AppPermission.AI_ADVISOR)) {
                         item {
                             QuickActionPill(Icons.Default.AutoAwesome, tr("AI Advisor", "এআই উপদেষ্টা"), onOpenAiAdvisor, testTag = "open_ai_advisor_pill")
+                        }
+                    }
+                    if (policy.has(AppPermission.AI_AD_STUDIO)) {
+                        item {
+                            QuickActionPill(Icons.Default.MovieCreation, strings.aiAdStudio, onOpenAiAdStudio, testTag = "dashboard_ai_ad_studio_pill")
                         }
                     }
                     if (policy.has(AppPermission.FARM_GUIDE_VIEW)) {
@@ -416,6 +434,88 @@ fun FarmerDashboardScreen(
             }
         }
 
+        // Separate Option Card: Agriculture, Crops (Rice, Wheat, Corn, Cattle Feed) & Land P/L Ledger
+        if (policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE)) {
+            item {
+                val agriUnlocked = subPolicy.canAccess(SubscriptionFeature.AGRICULTURE_CROP_LEDGER)
+                val scopedAgriLands = remember(state.agriLands, activeFarmId) {
+                    if (activeFarmId == null) state.agriLands else state.agriLands.filter { it.farmId == activeFarmId }
+                }
+                val scopedAgriLandIds = remember(scopedAgriLands) { scopedAgriLands.map { it.id }.toSet() }
+                val scopedAgriCrops = remember(state.agriCrops, scopedAgriLandIds, activeFarmId) {
+                    if (activeFarmId == null) state.agriCrops else state.agriCrops.filter { it.farmId == activeFarmId || it.landId in scopedAgriLandIds }
+                }
+                val scopedAgriExpenses = remember(state.agriExpenses, scopedAgriLandIds, activeFarmId) {
+                    if (activeFarmId == null) state.agriExpenses else state.agriExpenses.filter { it.farmId == activeFarmId || it.landId in scopedAgriLandIds }
+                }
+                val agriOverview = remember(scopedAgriLands, scopedAgriCrops, scopedAgriExpenses) {
+                    AgriLedgerCalculator.summarizeOverview(scopedAgriLands, scopedAgriCrops, scopedAgriExpenses)
+                }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_agriculture_card")
+                        .clickable { if (agriUnlocked) onOpenAgriculture() else if (canSubscribe) onOpenSubscription() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Grass,
+                                        contentDescription = strings.agriculture,
+                                        tint = MaterialTheme.colorScheme.onSecondary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                FeaturePlanBadge(
+                                    isFree = subPolicy.isFree(SubscriptionFeature.AGRICULTURE_CROP_LEDGER),
+                                    hasActiveSub = subPolicy.hasActiveSubscription
+                                )
+                                Text(
+                                    tr("Agriculture, Crops & Land Ledger", "কৃষি, ফসল ও জমির লাভ-ক্ষতি খতিয়ান"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                val spentFmt = CurrencyFormatter.formatCompact(agriOverview.totalSpent, currency)
+                                val worthFmt = CurrencyFormatter.formatCompact(agriOverview.totalYieldWorth, currency)
+                                val pnlFmt = CurrencyFormatter.formatCompact(agriOverview.netProfitOrLoss, currency)
+                                val pnlPrefix = if (agriOverview.netProfitOrLoss >= 0.0) "+" else ""
+                                Text(
+                                    tr(
+                                        "${agriOverview.totalLands} plots • ${agriOverview.totalCrops} crops (Rice, Wheat, Corn, Feed) • Spent $spentFmt • Yield $worthFmt • P/L $pnlPrefix$pnlFmt",
+                                        "${agriOverview.totalLands} জমি • ${agriOverview.totalCrops} ফসল (ধান, গম, ভুট্টা, গোখাদ্য) • খরচ $spentFmt • ফসল মূল্য $worthFmt • নিট $pnlPrefix$pnlFmt"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.88f)
+                                )
+                            }
+                        }
+                        FilledTonalButton(onClick = { if (agriUnlocked) onOpenAgriculture() else if (canSubscribe) onOpenSubscription() }) {
+                            Text(if (agriUnlocked) tr("Open", "খুলুন") else tr("Unlock", "আনলক"))
+                        }
+                    }
+                }
+            }
+        }
+
         // Gemini AI Farm Advisor Highlight Card
         if (policy.has(AppPermission.AI_ADVISOR)) {
             item {
@@ -475,6 +575,71 @@ fun FarmerDashboardScreen(
                         }
                         FilledTonalButton(onClick = { if (aiUnlocked) onOpenAiAdvisor() else if (canSubscribe) onOpenSubscription() }) {
                             Text(if (aiUnlocked) tr("Ask AI", "জিজ্ঞাসা") else tr("Unlock", "আনলক"))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Google AI Bengali Product Video Ad Studio Highlight Card
+        if (policy.has(AppPermission.AI_AD_STUDIO)) {
+            item {
+                val adStudioUnlocked = subPolicy.canAccess(SubscriptionFeature.AI_AD_VIDEO_STUDIO)
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_ai_ad_studio_card")
+                        .clickable { if (adStudioUnlocked) onOpenAiAdStudio() else if (canSubscribe) onOpenSubscription() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.MovieCreation,
+                                        contentDescription = strings.aiAdStudio,
+                                        tint = MaterialTheme.colorScheme.onTertiary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                FeaturePlanBadge(
+                                    isFree = subPolicy.isFree(SubscriptionFeature.AI_AD_VIDEO_STUDIO),
+                                    hasActiveSub = subPolicy.hasActiveSubscription
+                                )
+                                Text(
+                                    tr("Google AI Bengali Product Video Ads", "Google AI বাংলা পণ্য বিজ্ঞাপন ও অর্ডার ভিডিও"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    tr(
+                                        "${state.productAds.size} ads • Turn any product photo into a Bengali video commercial + screen-record order demo",
+                                        "${state.productAds.size}টি বিজ্ঞাপন • যেকোনো পণ্যের ছবি দিয়ে বাংলা বিজ্ঞাপন ও 'এখনই অর্ডার করুন' ভিডিও বানান"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        FilledTonalButton(onClick = { if (adStudioUnlocked) onOpenAiAdStudio() else if (canSubscribe) onOpenSubscription() }) {
+                            Text(if (adStudioUnlocked) tr("Create Ad", "বিজ্ঞাপন") else tr("Unlock", "আনলক"))
                         }
                     }
                 }

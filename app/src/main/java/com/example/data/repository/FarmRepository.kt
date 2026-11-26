@@ -15,6 +15,8 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     private val opsDao = db.operationsDao()
     private val subAdminDao = db.subscriptionAndAdminDao()
     private val permissionDao = db.permissionDao()
+    private val agriDao = db.agriDao()
+    private val productAdDao = db.productAdDao()
 
     suspend fun initializeDatabase() {
         DatabaseSeeder.seedIfEmpty(db)
@@ -80,6 +82,48 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         return Result.success(inserted)
     }
 
+    suspend fun signInWithGoogleProfile(
+        name: String,
+        email: String,
+        preferredRole: UserRole = UserRole.CUSTOMER
+    ): Result<UserEntity> {
+        val cleanEmail = email.trim().lowercase()
+        if (cleanEmail.isBlank()) {
+            return Result.failure(IllegalArgumentException("Google account email is missing."))
+        }
+        val safeRole = if (preferredRole == UserRole.FARMER) UserRole.FARMER else UserRole.CUSTOMER
+        val existing = userDao.getUserByEmail(cleanEmail)
+        if (existing != null) {
+            if (existing.status == AccountStatus.SUSPENDED.name) {
+                return Result.failure(IllegalStateException("This account is suspended. Contact Super Admin."))
+            }
+            if (existing.status == AccountStatus.INACTIVE.name) {
+                return Result.failure(IllegalStateException("This account is inactive. Contact Super Admin."))
+            }
+            return Result.success(existing)
+        }
+        val cleanName = name.trim().ifBlank { cleanEmail.substringBefore("@") }
+        val user = UserEntity(
+            name = cleanName,
+            mobile = "-",
+            email = cleanEmail,
+            passwordHash = PasswordHasher.hash("google-oauth-${System.nanoTime()}"),
+            role = safeRole.name,
+            status = AccountStatus.ACTIVE.name
+        )
+        val id = userDao.insert(user)
+        val inserted = user.copy(id = id)
+        subAdminDao.insertNotification(
+            AppNotificationEntity(
+                targetUserId = id,
+                title = "Welcome to Smart Farm Management",
+                message = "Signed in with Google. Your ${safeRole.name.lowercase()} cloud account is ready.",
+                category = "SYSTEM"
+            )
+        )
+        return Result.success(inserted)
+    }
+
     suspend fun resetPassword(identifier: String, newPassword: String): Result<Unit> {
         if (newPassword.length < 4) {
             return Result.failure(IllegalArgumentException("New password must be at least 4 characters."))
@@ -115,6 +159,15 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     fun observePlans(): Flow<List<SubscriptionPlanEntity>> = subAdminDao.observePlans()
     fun observeSystemSettings(): Flow<SystemSettingsEntity?> = subAdminDao.observeSystemSettings()
     fun observeUserSupport(userId: Long): Flow<List<SupportRequestEntity>> = subAdminDao.observeSupportByUser(userId)
+
+    // --- Agriculture, Lands, Crops & Sector Expenses ---
+    fun observeAgriLands(ownerId: Long): Flow<List<AgriLandEntity>> = agriDao.observeLandsByOwner(ownerId)
+    fun observeAgriCrops(ownerId: Long): Flow<List<AgriCropEntity>> = agriDao.observeCropsByOwner(ownerId)
+    fun observeAgriExpenses(ownerId: Long): Flow<List<AgriExpenseEntity>> = agriDao.observeExpensesByOwner(ownerId)
+
+    // --- AI Product Ads ---
+    fun observeProductAds(ownerId: Long): Flow<List<ProductAdEntity>> = productAdDao.observeAdsByOwner(ownerId)
+    fun observeActiveShopAds(): Flow<List<ProductAdEntity>> = productAdDao.observeActiveShopAds()
 
     // --- Customer Marketplace Streams ---
     fun observeMarketplaceItems(): Flow<List<InventoryItemEntity>> = inventoryDao.observeMarketplaceItems()
@@ -1445,7 +1498,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                 actorName = admin.name,
                 action = "SETTINGS_UPDATED",
                 target = "System Settings",
-                details = "Maintenance=${settings.maintenanceMode}, bKash=${settings.bkashNumber}, Nagad=${settings.nagadNumber}, Bank=${settings.bankAccountNumber}"
+                details = "Maintenance=${settings.maintenanceMode}, DevPhone=${settings.developerPhone}, DevWA=${settings.developerWhatsApp}, bKash=${settings.bkashNumber}"
             )
         )
     }
@@ -1516,4 +1569,157 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             )
         )
     }
+
+    // --- Agriculture, Crops, Lands & Sector Expenses ---
+
+    suspend fun saveAgriLand(land: AgriLandEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, land.ownerUserId, AppPermission.AGRICULTURE_MANAGE)
+        requireActiveSubscription(land.ownerUserId, actorUserId, SubscriptionFeature.AGRICULTURE_CROP_LEDGER)
+        val cleanName = land.name.trim()
+        if (cleanName.isBlank()) throw IllegalArgumentException("Land plot name is required.")
+        if (land.areaSize < 0.0) throw IllegalArgumentException("Land area cannot be negative.")
+        val cleaned = land.copy(
+            name = cleanName,
+            location = land.location.trim(),
+            soilOrLandType = land.soilOrLandType.trim(),
+            notes = land.notes.trim()
+        )
+        if (cleaned.id == 0L) agriDao.insertLand(cleaned) else {
+            agriDao.updateLand(cleaned)
+            cleaned.id
+        }
+    }
+
+    suspend fun deleteAgriLand(land: AgriLandEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, land.ownerUserId, AppPermission.AGRICULTURE_DELETE)
+        agriDao.deleteLand(land)
+    }
+
+    suspend fun saveAgriCrop(crop: AgriCropEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, crop.ownerUserId, AppPermission.AGRICULTURE_MANAGE)
+        requireActiveSubscription(crop.ownerUserId, actorUserId, SubscriptionFeature.AGRICULTURE_CROP_LEDGER)
+        val cleanTitle = crop.title.trim()
+        if (cleanTitle.isBlank()) throw IllegalArgumentException("Crop title is required.")
+        val parentLand = agriDao.getLandById(crop.landId)
+            ?: throw IllegalArgumentException("Please select a valid land plot first.")
+        if (parentLand.ownerUserId != crop.ownerUserId) {
+            throw SecurityException("Selected land plot does not belong to this account.")
+        }
+        val computedWorth = if (crop.yieldMarketWorth > 0.0) {
+            crop.yieldMarketWorth
+        } else {
+            crop.yieldQuantity.coerceAtLeast(0.0) * crop.marketPricePerUnit.coerceAtLeast(0.0)
+        }
+        val cleaned = crop.copy(
+            farmId = crop.farmId ?: parentLand.farmId,
+            title = cleanTitle,
+            variety = crop.variety.trim(),
+            yieldQuantity = crop.yieldQuantity.coerceAtLeast(0.0),
+            marketPricePerUnit = crop.marketPricePerUnit.coerceAtLeast(0.0),
+            yieldMarketWorth = computedWorth.coerceAtLeast(0.0),
+            soldAmount = crop.soldAmount.coerceAtLeast(0.0),
+            notes = crop.notes.trim(),
+            updatedAt = System.currentTimeMillis()
+        )
+        if (cleaned.id == 0L) agriDao.insertCrop(cleaned) else {
+            agriDao.updateCrop(cleaned)
+            cleaned.id
+        }
+    }
+
+    suspend fun recordAgriHarvest(
+        crop: AgriCropEntity,
+        yieldQuantity: Double,
+        yieldUnit: String,
+        marketPricePerUnit: Double,
+        yieldMarketWorth: Double,
+        soldAmount: Double,
+        status: String,
+        actorUserId: Long? = null
+    ): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, crop.ownerUserId, AppPermission.AGRICULTURE_MANAGE)
+        requireActiveSubscription(crop.ownerUserId, actorUserId, SubscriptionFeature.AGRICULTURE_CROP_LEDGER)
+        val safeQty = yieldQuantity.coerceAtLeast(0.0)
+        val safePrice = marketPricePerUnit.coerceAtLeast(0.0)
+        val safeWorth = if (yieldMarketWorth > 0.0) yieldMarketWorth else safeQty * safePrice
+        agriDao.updateCrop(
+            crop.copy(
+                yieldQuantity = safeQty,
+                yieldUnit = yieldUnit.ifBlank { crop.yieldUnit },
+                marketPricePerUnit = safePrice,
+                yieldMarketWorth = safeWorth.coerceAtLeast(0.0),
+                soldAmount = soldAmount.coerceAtLeast(0.0),
+                status = status,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun deleteAgriCrop(crop: AgriCropEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, crop.ownerUserId, AppPermission.AGRICULTURE_DELETE)
+        agriDao.deleteExpensesByCropId(crop.id)
+        agriDao.deleteCrop(crop)
+    }
+
+    suspend fun addAgriExpense(expense: AgriExpenseEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, expense.ownerUserId, AppPermission.AGRICULTURE_MANAGE)
+        requireActiveSubscription(expense.ownerUserId, actorUserId, SubscriptionFeature.AGRICULTURE_CROP_LEDGER)
+        if (expense.amount <= 0.0) throw IllegalArgumentException("Expense amount must be greater than zero.")
+        val parentLand = agriDao.getLandById(expense.landId)
+            ?: throw IllegalArgumentException("Please select a valid land plot.")
+        if (parentLand.ownerUserId != expense.ownerUserId) {
+            throw SecurityException("Selected land plot does not belong to this account.")
+        }
+        val cleaned = expense.copy(
+            farmId = expense.farmId ?: parentLand.farmId,
+            customSectorName = expense.customSectorName.trim(),
+            description = expense.description.trim()
+        )
+        agriDao.insertExpense(cleaned)
+    }
+
+    suspend fun deleteAgriExpense(expense: AgriExpenseEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, expense.ownerUserId, AppPermission.AGRICULTURE_DELETE)
+        agriDao.deleteExpense(expense)
+    }
+
+    // --- AI Product Video Ads ---
+    suspend fun saveProductAd(ad: ProductAdEntity, actorUserId: Long? = null): Result<Long> = runCatching {
+        requireActorPermission(actorUserId, ad.ownerUserId, AppPermission.AI_AD_STUDIO)
+        requireActiveSubscription(ad.ownerUserId, actorUserId, SubscriptionFeature.AI_AD_VIDEO_STUDIO)
+        val cleanProductName = ad.productName.trim()
+        if (cleanProductName.isBlank()) throw IllegalArgumentException("Product name is required.")
+        val cleanHook = ad.hookHeadlineBn.trim()
+        if (cleanHook.isBlank()) throw IllegalArgumentException("Ad headline is required.")
+        val cleaned = ad.copy(
+            productName = cleanProductName,
+            farmName = ad.farmName.trim(),
+            priceText = ad.priceText.trim(),
+            hookHeadlineBn = cleanHook,
+            promoBadgeBn = ad.promoBadgeBn.trim().ifBlank { "১০০% খাঁটি" },
+            benefitsPipeSeparatedBn = ad.benefitsPipeSeparatedBn.trim(),
+            callToActionBn = ad.callToActionBn.trim().ifBlank { "এখনই অর্ডার করুন • এখানে ক্লিক করুন" },
+            voiceoverScriptBn = ad.voiceoverScriptBn.trim(),
+            orderStepsPipeSeparatedBn = ad.orderStepsPipeSeparatedBn.trim(),
+            accentColorHex = ad.accentColorHex.trim().ifBlank { "#1B5E20" }
+        )
+        if (cleaned.id == 0L) {
+            productAdDao.insertAd(cleaned)
+        } else {
+            productAdDao.updateAd(cleaned)
+            cleaned.id
+        }
+    }
+
+    suspend fun toggleProductAdActive(ad: ProductAdEntity, active: Boolean, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, ad.ownerUserId, AppPermission.AI_AD_STUDIO)
+        requireActiveSubscription(ad.ownerUserId, actorUserId, SubscriptionFeature.AI_AD_VIDEO_STUDIO)
+        productAdDao.updateAd(ad.copy(isActiveInShop = active))
+    }
+
+    suspend fun deleteProductAd(ad: ProductAdEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireActorPermission(actorUserId, ad.ownerUserId, AppPermission.AI_AD_STUDIO)
+        productAdDao.deleteAd(ad)
+    }
 }
+

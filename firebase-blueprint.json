@@ -1,0 +1,224 @@
+{
+  "entities": {
+    "CloudUserProfile": {
+      "title": "CloudUserProfile",
+      "description": "Authenticated user profile synchronized via Google Sign-In.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID matching document ID." },
+        "displayName": { "type": "string", "description": "Full display name." },
+        "email": { "type": "string", "description": "Verified email address." },
+        "mobile": { "type": "string", "description": "Optional contact phone number." },
+        "role": { "type": "string", "enum": ["CUSTOMER", "FARMER"], "description": "Active portal role." },
+        "preferredLanguage": { "type": "string", "enum": ["en", "bn"], "description": "Preferred UI language." },
+        "preferredCurrency": { "type": "string", "enum": ["BDT", "USD", "EUR", "INR"], "description": "Preferred currency code." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "displayName", "email", "role", "preferredLanguage", "preferredCurrency", "createdAt", "updatedAt"]
+    },
+    "CloudFarm": {
+      "title": "CloudFarm",
+      "description": "Farm business profile belonging to an authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "farmCode": { "type": "string", "description": "Unique farm code." },
+        "name": { "type": "string", "description": "Farm business name." },
+        "location": { "type": "string", "description": "District or city." },
+        "address": { "type": "string", "description": "Full street address." },
+        "category": { "type": "string", "description": "Farm category (POULTRY, DAIRY, MIXED, etc.)." },
+        "managerName": { "type": "string", "description": "Farm manager name." },
+        "managerPhone": { "type": "string", "description": "Farm manager phone." },
+        "initialInvestment": { "type": "number", "description": "Initial capital investment in BDT." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "farmCode", "name", "location", "address", "category", "managerName", "managerPhone", "initialInvestment", "createdAt", "updatedAt"]
+    },
+    "CloudMarketplaceProduct": {
+      "title": "CloudMarketplaceProduct",
+      "description": "Agricultural product published to the online farm marketplace.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "description": "Seller Firebase Auth UID." },
+        "farmId": { "type": "string", "description": "Owning farm document ID or code." },
+        "farmName": { "type": "string", "description": "Owning farm display name." },
+        "farmLocation": { "type": "string", "description": "Owning farm location." },
+        "name": { "type": "string", "description": "Product title." },
+        "category": { "type": "string", "description": "Agricultural category (Rice, Wheat, Mustard, etc.)." },
+        "sourcingType": { "type": "string", "enum": ["FARM_PRODUCED", "PURCHASED_RESALE"], "description": "Own farm harvest vs purchased for resale." },
+        "quantity": { "type": "number", "description": "Available quantity in stock." },
+        "unit": { "type": "string", "description": "Unit of measurement." },
+        "unitCost": { "type": "number", "description": "Unit cost or purchase price in BDT." },
+        "sellingPrice": { "type": "number", "description": "Online unit selling price in BDT." },
+        "listed": { "type": "boolean", "description": "Whether the item is live in the public customer marketplace." },
+        "description": { "type": "string", "description": "Product details." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["ownerUid", "farmId", "farmName", "farmLocation", "name", "category", "sourcingType", "quantity", "unit", "unitCost", "sellingPrice", "listed", "description", "createdAt", "updatedAt"]
+    },
+    "CloudOrder": {
+      "title": "CloudOrder",
+      "description": "Customer online order routed to the exact farm owner.",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "description": "Human-readable order code." },
+        "customerUid": { "type": "string", "description": "Buyer Firebase Auth UID." },
+        "customerName": { "type": "string", "description": "Buyer name." },
+        "customerPhone": { "type": "string", "description": "Buyer phone." },
+        "deliveryAddress": { "type": "string", "description": "Delivery address." },
+        "paymentMethod": { "type": "string", "description": "Payment channel used." },
+        "farmId": { "type": "string", "description": "Target farm identifier." },
+        "farmName": { "type": "string", "description": "Target farm name." },
+        "farmOwnerUid": { "type": "string", "description": "Target farm owner Firebase Auth UID." },
+        "productId": { "type": "string", "description": "Marketplace product document ID." },
+        "itemsSummary": { "type": "string", "description": "Order items summary." },
+        "totalAmount": { "type": "number", "description": "Total order amount in BDT." },
+        "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "DISPATCHED", "DELIVERED", "CANCELLATION_REQUESTED", "CANCELLED"], "description": "Order lifecycle status." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["orderNumber", "customerUid", "customerName", "customerPhone", "deliveryAddress", "paymentMethod", "farmId", "farmName", "farmOwnerUid", "productId", "itemsSummary", "totalAmount", "status", "createdAt", "updatedAt"]
+    },
+    "CloudNotification": {
+      "title": "CloudNotification",
+      "description": "User-scoped notification alert including incoming farm order alerts.",
+      "type": "object",
+      "properties": {
+        "targetUserId": { "type": "string", "description": "Recipient Firebase Auth UID." },
+        "senderUid": { "type": "string", "description": "Sender Firebase Auth UID." },
+        "orderId": { "type": "string", "description": "Optional linked CloudOrder document ID." },
+        "title": { "type": "string", "description": "Notification title." },
+        "message": { "type": "string", "description": "Notification body." },
+        "category": { "type": "string", "description": "Notification category." },
+        "readFlag": { "type": "boolean", "description": "Whether the notification has been read." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": ["targetUserId", "senderUid", "title", "message", "category", "readFlag", "createdAt", "updatedAt"]
+    },
+    "CloudAgriLand": {
+      "title": "CloudAgriLand",
+      "description": "Agricultural land plot tracked for sector costs and crop profit/loss.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "farmId": { "type": "string" },
+        "name": { "type": "string" },
+        "areaSize": { "type": "number" },
+        "areaUnit": { "type": "string" },
+        "location": { "type": "string" },
+        "soilOrLandType": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "areaSize", "areaUnit", "location", "soilOrLandType", "notes", "createdAt", "updatedAt"]
+    },
+    "CloudAgriCrop": {
+      "title": "CloudAgriCrop",
+      "description": "Crop or cattle feed batch (Rice, Wheat, Corn, Cattle Feed, etc.) planted on a plot.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "farmId": { "type": "string" },
+        "landId": { "type": "string" },
+        "cropType": { "type": "string" },
+        "title": { "type": "string" },
+        "variety": { "type": "string" },
+        "season": { "type": "string" },
+        "status": { "type": "string", "enum": ["GROWING", "HARVESTED", "SOLD"] },
+        "yieldQuantity": { "type": "number" },
+        "yieldUnit": { "type": "string" },
+        "marketPricePerUnit": { "type": "number" },
+        "yieldMarketWorth": { "type": "number" },
+        "soldAmount": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "landId", "cropType", "title", "variety", "season", "status", "yieldQuantity", "yieldUnit", "marketPricePerUnit", "yieldMarketWorth", "soldAmount", "notes", "createdAt", "updatedAt"]
+    },
+    "CloudAgriExpense": {
+      "title": "CloudAgriExpense",
+      "description": "Sector-wise agricultural expense recorded for a land plot and optional crop batch.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "farmId": { "type": "string" },
+        "landId": { "type": "string" },
+        "cropId": { "type": "string" },
+        "sector": { "type": "string" },
+        "customSectorName": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "landId", "sector", "customSectorName", "amount", "description", "createdAt", "updatedAt"]
+    },
+    "CloudProductAd": {
+      "title": "CloudProductAd",
+      "description": "AI-generated Bengali product video ad published to the marketplace.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "productDocId": { "type": "string" },
+        "productName": { "type": "string" },
+        "farmName": { "type": "string" },
+        "priceText": { "type": "string" },
+        "hookHeadlineBn": { "type": "string" },
+        "promoBadgeBn": { "type": "string" },
+        "benefitsPipeSeparatedBn": { "type": "string" },
+        "callToActionBn": { "type": "string" },
+        "voiceoverScriptBn": { "type": "string" },
+        "orderStepsPipeSeparatedBn": { "type": "string" },
+        "accentColorHex": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "productName", "farmName", "priceText", "hookHeadlineBn", "promoBadgeBn", "benefitsPipeSeparatedBn", "callToActionBn", "voiceoverScriptBn", "orderStepsPipeSeparatedBn", "accentColorHex", "active", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/CloudUserProfile" },
+      "description": "User profile document strictly accessible to owner and Super Admin."
+    },
+    "/users/{userId}/farms/{farmId}": {
+      "schema": { "$ref": "#/entities/CloudFarm" },
+      "description": "Farm businesses owned by the authenticated user."
+    },
+    "/users/{userId}/agri_lands/{landId}": {
+      "schema": { "$ref": "#/entities/CloudAgriLand" },
+      "description": "Agricultural land plots owned by the authenticated user."
+    },
+    "/users/{userId}/agri_crops/{cropId}": {
+      "schema": { "$ref": "#/entities/CloudAgriCrop" },
+      "description": "Agricultural crop & cattle feed batches owned by the authenticated user."
+    },
+    "/users/{userId}/agri_expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/CloudAgriExpense" },
+      "description": "Sector-wise agricultural expense entries owned by the authenticated user."
+    },
+    "/marketplace_products/{productId}": {
+      "schema": { "$ref": "#/entities/CloudMarketplaceProduct" },
+      "description": "Online agricultural products visible when listed or owned by caller."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/CloudOrder" },
+      "description": "Online customer orders readable by customer and receiving farm owner."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/CloudNotification" },
+      "description": "Notifications scoped to target user, including atomic order notifications."
+    },
+    "/product_ads/{adId}": {
+      "schema": { "$ref": "#/entities/CloudProductAd" },
+      "description": "AI Bengali product video ads visible to signed-in shoppers when active or to the owning farmer."
+    }
+  }
+}

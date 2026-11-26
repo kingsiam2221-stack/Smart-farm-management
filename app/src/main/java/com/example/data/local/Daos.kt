@@ -355,3 +355,68 @@ interface PermissionDao {
     @Query("DELETE FROM employee_permissions WHERE permissionKey = :permissionKey")
     suspend fun deletePermissionsByKey(permissionKey: String)
 }
+
+@Dao
+interface AgriDao {
+    @Query("SELECT * FROM agri_lands WHERE ownerUserId = :ownerId ORDER BY createdAt DESC")
+    fun observeLandsByOwner(ownerId: Long): Flow<List<AgriLandEntity>>
+
+    @Query("SELECT * FROM agri_lands WHERE id = :id LIMIT 1")
+    suspend fun getLandById(id: Long): AgriLandEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLand(land: AgriLandEntity): Long
+
+    @Update
+    suspend fun updateLand(land: AgriLandEntity)
+
+    @Delete
+    suspend fun deleteLand(land: AgriLandEntity)
+
+    @Query("SELECT * FROM agri_crops WHERE ownerUserId = :ownerId ORDER BY updatedAt DESC, createdAt DESC")
+    fun observeCropsByOwner(ownerId: Long): Flow<List<AgriCropEntity>>
+
+    @Query("SELECT * FROM agri_crops WHERE id = :id LIMIT 1")
+    suspend fun getCropById(id: Long): AgriCropEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCrop(crop: AgriCropEntity): Long
+
+    @Update
+    suspend fun updateCrop(crop: AgriCropEntity)
+
+    @Delete
+    suspend fun deleteCrop(crop: AgriCropEntity)
+
+    @Query("SELECT * FROM agri_expenses WHERE ownerUserId = :ownerId ORDER BY expenseDate DESC, id DESC")
+    fun observeExpensesByOwner(ownerId: Long): Flow<List<AgriExpenseEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExpense(expense: AgriExpenseEntity): Long
+
+    @Delete
+    suspend fun deleteExpense(expense: AgriExpenseEntity)
+
+    @Query("DELETE FROM agri_expenses WHERE cropId = :cropId")
+    suspend fun deleteExpensesByCropId(cropId: Long)
+}
+
+@Dao
+interface ProductAdDao {
+    @Query("SELECT * FROM product_ads WHERE ownerUserId = :ownerId ORDER BY createdAt DESC")
+    fun observeAdsByOwner(ownerId: Long): Flow<List<ProductAdEntity>>
+
+    @Query("SELECT * FROM product_ads WHERE isActiveInShop = 1 ORDER BY createdAt DESC LIMIT 50")
+    fun observeActiveShopAds(): Flow<List<ProductAdEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAd(ad: ProductAdEntity): Long
+
+    @Update
+    suspend fun updateAd(ad: ProductAdEntity)
+
+    @Delete
+    suspend fun deleteAd(ad: ProductAdEntity)
+}
+
+

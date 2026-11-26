@@ -262,6 +262,32 @@ object DomainLocalization {
             else -> role
         }
     }
+
+    fun agriCropType(key: String, isBn: Boolean): String {
+        val type = com.example.data.local.AgriCropType.fromKey(key)
+        return if (isBn) type.labelBn else type.labelEn
+    }
+
+    fun agriLandUnit(key: String, isBn: Boolean): String {
+        val unit = com.example.data.local.AgriLandUnit.fromKey(key)
+        return if (isBn) unit.labelBn else unit.labelEn
+    }
+
+    fun agriSector(key: String, customName: String = "", isBn: Boolean): String {
+        if (key == com.example.data.local.AgriSector.OTHER.key && customName.isNotBlank()) return customName
+        val sec = com.example.data.local.AgriSector.fromKey(key)
+        return if (isBn) sec.labelBn else sec.labelEn
+    }
+
+    fun agriCropStatus(key: String, isBn: Boolean): String {
+        val st = com.example.data.local.AgriCropStatus.fromKey(key)
+        return if (isBn) st.labelBn else st.labelEn
+    }
+
+    fun agriSeason(key: String, isBn: Boolean): String {
+        val s = com.example.data.local.AgriSeason.fromKey(key)
+        return if (isBn) s.labelBn else s.labelEn
+    }
 }
 
 data class AppStrings(
@@ -339,7 +365,11 @@ data class AppStrings(
     val orderHistory: String,
     val superAdminPortal: String,
     val permissions: String,
-    val onlineProducts: String
+    val onlineProducts: String,
+    val agriculture: String,
+    val aiAdStudio: String,
+    val settings: String,
+    val helpAndSupport: String
 )
 
 object Localization {
@@ -418,7 +448,11 @@ object Localization {
         orderHistory = "Order History",
         superAdminPortal = "Super Admin Console",
         permissions = "Permissions",
-        onlineProducts = "Online Products"
+        onlineProducts = "Online Products",
+        agriculture = "Agriculture",
+        aiAdStudio = "AI Ad Video",
+        settings = "Settings",
+        helpAndSupport = "Help & Support"
     )
 
     val bangla = AppStrings(
@@ -496,7 +530,11 @@ object Localization {
         orderHistory = "অর্ডার ইতিহাস",
         superAdminPortal = "সুপার অ্যাডমিন কনসোল",
         permissions = "অনুমতি (অ্যাক্সেস)",
-        onlineProducts = "অনলাইন পণ্য"
+        onlineProducts = "অনলাইন পণ্য",
+        agriculture = "কৃষি হিসাব",
+        aiAdStudio = "AI বিজ্ঞাপন ভিডিও",
+        settings = "সেটিংস",
+        helpAndSupport = "সাহায্য ও সাপোর্ট"
     )
 
     fun strings(language: AppLanguage, overrides: Map<String, String> = emptyMap()): AppStrings {

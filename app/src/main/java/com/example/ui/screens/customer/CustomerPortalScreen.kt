@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -22,12 +24,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.ai.AdVideoMp4Exporter
+import com.example.ai.BengaliAdStoryboard
+import com.example.ai.ProductAdAiViewModel
+import com.example.ai.SharePlatform
 import com.example.data.local.*
 import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
@@ -38,6 +45,8 @@ import com.example.i18n.isBangla
 import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.LanguageCurrencyDialog
+import com.example.ui.components.ProductAdVideoPlayer
+import kotlinx.coroutines.launch
 import com.example.ui.components.ThemeModeSelectorRow
 import com.example.ui.components.formatShortDate
 import com.example.ui.components.nextThemeModeOverride
@@ -166,10 +175,40 @@ private fun ShopCatalogTab(
     onSelectDarkMode: (Boolean?) -> Unit,
     onAddToCart: (InventoryItemEntity) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val helperVm = remember { ProductAdAiViewModel() }
     val isBn = isBangla()
     val categories = state.availableCategories
     val filtered = state.marketplaceItems
     val hasMore = state.totalMatchingCount > filtered.size
+    var watchingAd by remember { mutableStateOf<ProductAdEntity?>(null) }
+    var showHowToOrderDemo by remember { mutableStateOf(false) }
+    var exportingShare by remember { mutableStateOf(false) }
+
+    fun shareAdVideo(storyboard: BengaliAdStoryboard, imageUri: String?, platform: SharePlatform) {
+        if (exportingShare) return
+        scope.launch {
+            exportingShare = true
+            try {
+                val bmp = helperVm.decodeBitmap(context, imageUri)
+                val mp4File = AdVideoMp4Exporter.exportCommercialMp4(
+                    context = context.applicationContext,
+                    storyboard = storyboard,
+                    productBitmap = bmp
+                )
+                AdVideoMp4Exporter.saveMp4ToMoviesGallery(context.applicationContext, mp4File)
+                AdVideoMp4Exporter.launchShareVideo(
+                    context = context,
+                    mp4File = mp4File,
+                    storyboard = storyboard,
+                    platform = platform
+                )
+            } finally {
+                exportingShare = false
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -281,6 +320,75 @@ private fun ShopCatalogTab(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(
+                onClick = { showHowToOrderDemo = true },
+                modifier = Modifier.fillMaxWidth().testTag("watch_how_to_order_video_button")
+            ) {
+                Icon(Icons.Default.OndemandVideo, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    tr("Watch How to Order Video (বাংলা ডেমো)", "কিভাবে অর্ডার করবেন? ভিডিও দেখুন (বাংলা)"),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (state.activeShopAds.isNotEmpty()) {
+            item(key = "shop_featured_ads") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        tr("Sponsored Farm Video Ads (বিজ্ঞাপন)", "খামার পণ্যের ভিডিও বিজ্ঞাপন"),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(state.activeShopAds, key = { "shop_ad_${it.id}" }) { ad ->
+                            Surface(
+                                onClick = { watchingAd = ad },
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                                tonalElevation = 2.dp,
+                                modifier = Modifier
+                                    .width(240.dp)
+                                    .testTag("shop_ad_card_${ad.id}")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(ad.productName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                                            Text(ad.promoBadgeBn, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                                        }
+                                    }
+                                    Text(ad.hookHeadlineBn, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                    Text(
+                                        "▶ ${tr("Watch Ad & Order", "বিজ্ঞাপন দেখুন ও অর্ডার করুন")}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -414,6 +522,157 @@ private fun ShopCatalogTab(
                 }
             }
         }
+    }
+
+    watchingAd?.let { ad ->
+        val adStoryboard = remember(ad) { BengaliAdStoryboard.fromEntity(ad) }
+        val linkedProduct = remember(ad.inventoryItemId, state.marketplaceItems) {
+            ad.inventoryItemId?.let { targetId -> state.marketplaceItems.firstOrNull { it.id == targetId } }
+        }
+        AlertDialog(
+            onDismissRequest = { watchingAd = null },
+            title = {
+                Text(
+                    "${ad.productName} • ${ad.farmName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ProductAdVideoPlayer(
+                        storyboard = adStoryboard,
+                        imageUri = ad.imageUri,
+                        autoPlay = true,
+                        onOrderNowClick = {
+                            if (linkedProduct != null) {
+                                onAddToCart(linkedProduct)
+                                watchingAd = null
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(adStoryboard, ad.imageUri, SharePlatform.WHATSAPP) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(tr("WhatsApp", "হোয়াটসঅ্যাপ"), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(adStoryboard, ad.imageUri, SharePlatform.FACEBOOK) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(tr("Facebook", "ফেসবুক"), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(adStoryboard, ad.imageUri, SharePlatform.ANY_APP) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (exportingShare) "..." else tr("Share All", "শেয়ার"), maxLines = 1)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (linkedProduct != null) {
+                    Button(
+                        onClick = {
+                            onAddToCart(linkedProduct)
+                            watchingAd = null
+                        },
+                        modifier = Modifier.testTag("ad_dialog_order_now_button")
+                    ) {
+                        Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(tr("Order Now • Add to Cart", "এখনই অর্ডার করুন • কার্টে দিন"))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { watchingAd = null }) { Text(tr("Close", "বন্ধ করুন")) }
+            }
+        )
+    }
+
+    if (showHowToOrderDemo) {
+        val sample = state.marketplaceItems.firstOrNull()
+        val demoStoryboard = BengaliAdStoryboard(
+            productName = sample?.name ?: "খাঁটি খামার পণ্য (চাল / গম / ডিম)",
+            farmName = state.farmsById[sample?.farmId]?.name ?: "Smart Farm বাজার",
+            priceText = sample?.let { CurrencyFormatter.format(it.sellingPrice, currency) } ?: "৳85 / kg",
+            hookHeadlineBn = "সরাসরি খামার থেকে মোবাইল অ্যাপে অর্ডার করার সহজ নিয়ম!",
+            promoBadgeBn = "অ্যাপ স্ক্রিন রেকর্ড টিউটোরিয়াল",
+            benefitsBn = BengaliAdStoryboard.defaultBenefits(sample?.name ?: "খামার পণ্য"),
+            callToActionBn = "এখনই অর্ডার করুন • এখানে ক্লিক করুন",
+            voiceoverScriptBn = "Smart Farm অ্যাপ থেকে অর্ডার করা একদম সহজ! Play Store থেকে Smart Farm অ্যাপ ডাউনলোড করে কাস্টমার অ্যাকাউন্ট খুলুন। এরপর বাজার থেকে পছন্দের পণ্য বেছে কার্টে যোগ করুন বাটনে এখানে ক্লিক করুন, ঠিকানা ও বিকাশ বা নগদ পেমেন্ট দিয়ে অনলাইনে অর্ডার করুন!",
+            orderStepsBn = BengaliAdStoryboard.defaultOrderSteps(),
+            accentColorHex = "#1B5E20",
+            downloadAndOrderOutroBn = BengaliAdStoryboard.DEFAULT_DOWNLOAD_AND_ORDER_OUTRO_BN
+        )
+        AlertDialog(
+            onDismissRequest = { showHowToOrderDemo = false },
+            title = {
+                Text(
+                    tr("How to Order from App (বাংলা ভিডিও গাইড)", "অ্যাপ থেকে অর্ডার করার ভিডিও গাইড"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ProductAdVideoPlayer(
+                        storyboard = demoStoryboard,
+                        imageUri = sample?.imageUri,
+                        autoPlay = true,
+                        onOrderNowClick = {
+                            if (sample != null) onAddToCart(sample)
+                            showHowToOrderDemo = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(demoStoryboard, sample?.imageUri, SharePlatform.WHATSAPP) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(tr("WhatsApp", "হোয়াটসঅ্যাপ"), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(demoStoryboard, sample?.imageUri, SharePlatform.FACEBOOK) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(tr("Facebook", "ফেসবুক"), maxLines = 1)
+                        }
+                        OutlinedButton(
+                            enabled = !exportingShare,
+                            onClick = { shareAdVideo(demoStoryboard, sample?.imageUri, SharePlatform.ANY_APP) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (exportingShare) "..." else tr("Share All", "শেয়ার"), maxLines = 1)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHowToOrderDemo = false }) { Text(tr("Close", "বন্ধ করুন")) }
+            }
+        )
     }
 }
 

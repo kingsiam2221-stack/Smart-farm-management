@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +27,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ai.FarmAiViewModel
 import com.example.ai.configureAppCheck
+import com.example.auth.authStateFlow
+import com.example.auth.signOutGoogle
 import com.example.data.local.AppPermission
 import com.example.data.local.EmployeeAccessPolicy
 import com.example.data.local.SmartFarmDatabase
@@ -42,9 +45,12 @@ import com.example.ui.screens.admin.SuperAdminDashboardScreen
 import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.customer.CustomerPortalScreen
 import com.example.ui.screens.farmer.*
+import com.example.ui.state.CloudSyncViewModel
 import com.example.ui.state.SmartFarmViewModel
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.SmartFarmTheme
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,6 +115,16 @@ class MainActivity : ComponentActivity() {
                         snackbarHost = { SnackbarHost(snackbarHostState) }
                     ) { outerPadding ->
                         Box(modifier = Modifier.fillMaxSize().padding(outerPadding)) {
+                            val context = LocalContext.current
+                            val coroutineScope = rememberCoroutineScope()
+                            val firebaseUser by Firebase.auth.authStateFlow().collectAsStateWithLifecycle(
+                                initialValue = Firebase.auth.currentUser
+                            )
+                            val handleLogout: () -> Unit = {
+                                signOutGoogle(context, coroutineScope) {
+                                    viewModel.logout()
+                                }
+                            }
                             val activeUser = currentUser
                             if (!isInitialized) {
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -125,11 +141,31 @@ class MainActivity : ComponentActivity() {
                                     onLogin = viewModel::login,
                                     onRegister = viewModel::register,
                                     onResetPassword = viewModel::resetPassword,
+                                    onGoogleSignInSuccess = { fbUser, role ->
+                                        viewModel.onGoogleAuthenticated(
+                                            displayName = fbUser.displayName.orEmpty(),
+                                            email = fbUser.email.orEmpty(),
+                                            preferredRole = role
+                                        )
+                                    },
+                                    onGoogleSignInError = viewModel::setAuthErrorMessage,
                                     onSelectLanguage = viewModel::setLanguage,
                                     onSelectCurrency = viewModel::setCurrency,
                                     onSelectDarkMode = viewModel::setDarkMode
                                 )
                             } else {
+                                val fbUid = firebaseUser?.uid
+                                if (!fbUid.isNullOrBlank()) {
+                                    key(fbUid) {
+                                        CloudSyncSidecar(
+                                            currentUserId = fbUid,
+                                            activeUser = activeUser,
+                                            languageCode = language.code,
+                                            currencyCode = currency.code,
+                                            viewModel = viewModel
+                                        )
+                                    }
+                                }
                                 when (activeUser.role) {
                                     UserRole.SUPER_ADMIN.name -> {
                                         val adminState by viewModel.adminState.collectAsStateWithLifecycle()
@@ -162,7 +198,7 @@ class MainActivity : ComponentActivity() {
                                             onSelectLanguage = viewModel::setLanguage,
                                             onSelectCurrency = viewModel::setCurrency,
                                             onSelectDarkMode = viewModel::setDarkMode,
-                                            onLogout = viewModel::logout
+                                            onLogout = handleLogout
                                         )
                                     }
 
@@ -188,7 +224,7 @@ class MainActivity : ComponentActivity() {
                                             onSelectLanguage = viewModel::setLanguage,
                                             onSelectCurrency = viewModel::setCurrency,
                                             onSelectDarkMode = viewModel::setDarkMode,
-                                            onLogout = viewModel::logout
+                                            onLogout = handleLogout
                                         )
                                     }
 
@@ -205,7 +241,8 @@ class MainActivity : ComponentActivity() {
                                             currentCurrency = currency,
                                             darkModeOverride = prefs.darkModeOverride,
                                             languageOverrides = overrides,
-                                            viewModel = viewModel
+                                            viewModel = viewModel,
+                                            onLogout = handleLogout
                                         )
                                     }
                                 }
@@ -219,7 +256,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class FarmerSection {
-    DASHBOARD, FARMS, ONLINE_PRODUCTS, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE
+    DASHBOARD, FARMS, AGRICULTURE, ONLINE_PRODUCTS, AI_AD_STUDIO, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE
 }
 
 private data class NavEntry(
@@ -233,8 +270,12 @@ private fun isSectionPermitted(sec: FarmerSection, policy: EmployeeAccessPolicy)
         policy.hasAny(AppPermission.DASHBOARD_OVERVIEW, AppPermission.DASHBOARD_CHARTS, AppPermission.AI_ADVISOR) || policy.isAdminOwner
     FarmerSection.FARMS ->
         policy.hasAny(AppPermission.FARMS_VIEW, AppPermission.FARMS_CREATE_EDIT, AppPermission.FARMS_DELETE)
+    FarmerSection.AGRICULTURE ->
+        policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE, AppPermission.AGRICULTURE_DELETE)
     FarmerSection.ONLINE_PRODUCTS ->
         policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE)
+    FarmerSection.AI_AD_STUDIO ->
+        policy.has(AppPermission.AI_AD_STUDIO)
     FarmerSection.LIVESTOCK ->
         policy.hasAny(AppPermission.LIVESTOCK_VIEW, AppPermission.LIVESTOCK_CREATE_EDIT, AppPermission.LIVESTOCK_HEALTH_EVENTS)
     FarmerSection.EGGS ->
@@ -252,6 +293,177 @@ private fun isSectionPermitted(sec: FarmerSection, policy: EmployeeAccessPolicy)
 }
 
 @Composable
+private fun CloudSyncSidecar(
+    currentUserId: String,
+    activeUser: com.example.data.local.UserEntity,
+    languageCode: String,
+    currencyCode: String,
+    viewModel: SmartFarmViewModel
+) {
+    val cloudVm: CloudSyncViewModel = viewModel(
+        key = currentUserId,
+        factory = CloudSyncViewModel.factory(currentUserId)
+    )
+
+    val profileState by cloudVm.userProfileState.collectAsStateWithLifecycle()
+    val farmsState by cloudVm.farmsState.collectAsStateWithLifecycle()
+    val marketplaceState by cloudVm.publicMarketplaceState.collectAsStateWithLifecycle()
+    val myProductsState by cloudVm.myMarketplaceState.collectAsStateWithLifecycle()
+    val customerOrdersState by cloudVm.customerOrdersState.collectAsStateWithLifecycle()
+    val farmerOrdersState by cloudVm.farmerOrdersState.collectAsStateWithLifecycle()
+    val notificationsState by cloudVm.notificationsState.collectAsStateWithLifecycle()
+    val agriLandsState by cloudVm.agriLandsState.collectAsStateWithLifecycle()
+    val agriCropsState by cloudVm.agriCropsState.collectAsStateWithLifecycle()
+    val agriExpensesState by cloudVm.agriExpensesState.collectAsStateWithLifecycle()
+    val farmerState by viewModel.farmerState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(currentUserId, activeUser.id, languageCode, currencyCode) {
+        val cloudRole = if (activeUser.role == UserRole.FARMER.name) "FARMER" else "CUSTOMER"
+        cloudVm.syncUserProfile(
+            displayName = activeUser.name,
+            email = activeUser.email,
+            mobile = activeUser.mobile,
+            role = cloudRole,
+            preferredLanguage = languageCode,
+            preferredCurrency = currencyCode
+        )
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.farms) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            farmerState.farms.forEach { farm ->
+                cloudVm.syncFarm(
+                    farmDocId = "farm_${farm.id}",
+                    farmCode = farm.farmCode,
+                    name = farm.name,
+                    location = farm.location,
+                    address = farm.address,
+                    category = farm.category,
+                    managerName = farm.managerName,
+                    managerPhone = farm.managerPhone,
+                    initialInvestment = farm.initialInvestment
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.inventory, farmerState.farms) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            val farmsById = farmerState.farms.associateBy { it.id }
+            farmerState.inventory.filter { it.listInMarketplace && it.sellingPrice > 0.0 }.forEach { item ->
+                val farm = farmsById[item.farmId]
+                cloudVm.syncMarketplaceProduct(
+                    productDocId = "prod_${item.id}",
+                    farmId = "farm_${item.farmId}",
+                    farmName = farm?.name ?: "Smart Farm",
+                    farmLocation = farm?.location ?: "",
+                    name = item.name,
+                    category = item.category,
+                    sourcingType = item.sourcingType,
+                    quantity = item.quantity,
+                    unit = item.unit,
+                    unitCost = item.unitCost,
+                    sellingPrice = item.sellingPrice,
+                    listed = item.listInMarketplace,
+                    description = item.description
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.agriLands) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            farmerState.agriLands.forEach { land ->
+                cloudVm.syncAgriLand(
+                    landDocId = "land_${land.id}",
+                    farmId = land.farmId?.let { "farm_$it" },
+                    name = land.name,
+                    areaSize = land.areaSize,
+                    areaUnit = land.areaUnit,
+                    location = land.location,
+                    soilOrLandType = land.soilOrLandType,
+                    notes = land.notes
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.agriCrops) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            farmerState.agriCrops.forEach { crop ->
+                cloudVm.syncAgriCrop(
+                    cropDocId = "crop_${crop.id}",
+                    farmId = crop.farmId?.let { "farm_$it" },
+                    landId = "land_${crop.landId}",
+                    cropType = crop.cropType,
+                    title = crop.title,
+                    variety = crop.variety,
+                    season = crop.season,
+                    status = crop.status,
+                    yieldQuantity = crop.yieldQuantity,
+                    yieldUnit = crop.yieldUnit,
+                    marketPricePerUnit = crop.marketPricePerUnit,
+                    yieldMarketWorth = crop.yieldMarketWorth,
+                    soldAmount = crop.soldAmount,
+                    notes = crop.notes
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.agriExpenses) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            farmerState.agriExpenses.forEach { exp ->
+                cloudVm.syncAgriExpense(
+                    expenseDocId = "agri_exp_${exp.id}",
+                    farmId = exp.farmId?.let { "farm_$it" },
+                    landId = "land_${exp.landId}",
+                    cropId = exp.cropId?.let { "crop_$it" },
+                    sector = exp.sector,
+                    customSectorName = exp.customSectorName,
+                    amount = exp.amount,
+                    description = exp.description
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(currentUserId, activeUser.role, farmerState.productAds) {
+        if (activeUser.role == UserRole.FARMER.name) {
+            farmerState.productAds.forEach { ad ->
+                cloudVm.syncProductAd(
+                    adDocId = "ad_${ad.id}",
+                    productDocId = ad.inventoryItemId?.let { "prod_$it" },
+                    productName = ad.productName,
+                    farmName = ad.farmName,
+                    priceText = ad.priceText,
+                    hookHeadlineBn = ad.hookHeadlineBn,
+                    promoBadgeBn = ad.promoBadgeBn,
+                    benefitsPipeSeparatedBn = ad.benefitsPipeSeparatedBn,
+                    callToActionBn = ad.callToActionBn,
+                    voiceoverScriptBn = ad.voiceoverScriptBn,
+                    orderStepsPipeSeparatedBn = ad.orderStepsPipeSeparatedBn,
+                    accentColorHex = ad.accentColorHex,
+                    active = ad.isActiveInShop
+                )
+            }
+        }
+    }
+
+    // Keep state flows active without unused warnings
+    profileState
+    farmsState
+    marketplaceState
+    myProductsState
+    customerOrdersState
+    farmerOrdersState
+    notificationsState
+    agriLandsState
+    agriCropsState
+    agriExpensesState
+}
+
+@Composable
 private fun FarmerShell(
     user: com.example.data.local.UserEntity,
     farmerState: com.example.ui.state.FarmerDashboardState,
@@ -263,14 +475,17 @@ private fun FarmerShell(
     currentCurrency: CurrencyOption,
     darkModeOverride: Boolean?,
     languageOverrides: Map<String, String>,
-    viewModel: SmartFarmViewModel
+    viewModel: SmartFarmViewModel,
+    onLogout: () -> Unit
 ) {
     val policy = farmerState.accessPolicy
     val allEntries = remember(strings) {
         listOf(
             NavEntry(FarmerSection.DASHBOARD, strings.dashboard, Icons.Default.Dashboard),
             NavEntry(FarmerSection.FARMS, strings.farms, Icons.Default.Agriculture),
+            NavEntry(FarmerSection.AGRICULTURE, strings.agriculture, Icons.Default.Grass),
             NavEntry(FarmerSection.ONLINE_PRODUCTS, strings.onlineProducts, Icons.Default.Storefront),
+            NavEntry(FarmerSection.AI_AD_STUDIO, strings.aiAdStudio, Icons.Default.MovieCreation),
             NavEntry(FarmerSection.LIVESTOCK, strings.livestock, Icons.Default.Pets),
             NavEntry(FarmerSection.EGGS, strings.eggs, Icons.Default.Egg),
             NavEntry(FarmerSection.OPERATIONS, strings.operations, Icons.Default.Inventory2),
@@ -290,6 +505,7 @@ private fun FarmerShell(
     var commerceInitialTab by remember { mutableStateOf(CommerceTab.SALES) }
     var openCreateFarmOnEntry by remember { mutableStateOf(false) }
     var openAddOnlineProductOnEntry by remember { mutableStateOf(false) }
+    var preselectedAdProductId by remember { mutableStateOf<Long?>(null) }
     var showAiAdvisor by remember { mutableStateOf(false) }
     val aiViewModel: FarmAiViewModel = viewModel()
     val unreadCount = if (policy.has(AppPermission.ALERTS_CAUTION_VIEW)) notifications.count { !it.readFlag } else 0
@@ -392,6 +608,8 @@ private fun FarmerShell(
                                             label = { Text(entry.label) },
                                             leadingIcon = { Icon(entry.icon, contentDescription = null, modifier = Modifier.size(16.dp)) },
                                             modifier = when (entry.section) {
+                                                FarmerSection.AGRICULTURE -> Modifier.testTag("mobile_agriculture_chip")
+                                                FarmerSection.AI_AD_STUDIO -> Modifier.testTag("mobile_ai_ad_studio_chip")
                                                 FarmerSection.GUIDE -> Modifier.testTag("mobile_guide_chip")
                                                 FarmerSection.PERMISSIONS -> Modifier.testTag("mobile_permissions_chip")
                                                 FarmerSection.ONLINE_PRODUCTS -> Modifier.testTag("mobile_online_products_chip")
@@ -472,6 +690,7 @@ private fun FarmerShell(
                                     openAddOnlineProductOnEntry = false
                                     section = FarmerSection.ONLINE_PRODUCTS
                                 },
+                                onOpenAgriculture = { section = FarmerSection.AGRICULTURE },
                                 onOpenInventory = {
                                     operationsInitialTab = OperationsTab.INVENTORY
                                     section = FarmerSection.OPERATIONS
@@ -484,6 +703,7 @@ private fun FarmerShell(
                                 onOpenSubscription = openSubscriptionTab,
                                 onOpenPermissions = { section = FarmerSection.PERMISSIONS },
                                 onOpenAiAdvisor = openAiIfAllowed,
+                                onOpenAiAdStudio = { section = FarmerSection.AI_AD_STUDIO },
                                 onToggleLanguage = {
                                     if (policy.has(AppPermission.PROFILE_APPEARANCE)) {
                                         viewModel.setLanguage(if (currentLanguage == AppLanguage.BN) AppLanguage.EN else AppLanguage.BN)
@@ -508,6 +728,21 @@ private fun FarmerShell(
                                 onOpenSubscription = openSubscriptionTab
                             )
 
+                            FarmerSection.AGRICULTURE -> AgricultureScreen(
+                                state = farmerState,
+                                strings = strings,
+                                currency = currentCurrency,
+                                onSelectFarm = viewModel::selectActiveFarm,
+                                onSaveLand = viewModel::saveAgriLand,
+                                onDeleteLand = viewModel::deleteAgriLand,
+                                onSaveCrop = viewModel::saveAgriCrop,
+                                onRecordHarvest = viewModel::recordAgriHarvest,
+                                onDeleteCrop = viewModel::deleteAgriCrop,
+                                onAddAgriExpense = viewModel::addAgriExpense,
+                                onDeleteAgriExpense = viewModel::deleteAgriExpense,
+                                onOpenSubscription = openSubscriptionTab
+                            )
+
                             FarmerSection.ONLINE_PRODUCTS -> OnlineProductsScreen(
                                 state = farmerState,
                                 strings = strings,
@@ -526,6 +761,23 @@ private fun FarmerShell(
                                     commerceInitialTab = CommerceTab.ORDERS
                                     section = FarmerSection.COMMERCE
                                 },
+                                onOpenSubscription = openSubscriptionTab,
+                                onCreateAdForProduct = { item ->
+                                    preselectedAdProductId = item.id
+                                    section = FarmerSection.AI_AD_STUDIO
+                                }
+                            )
+
+                            FarmerSection.AI_AD_STUDIO -> AiProductAdStudioScreen(
+                                state = farmerState,
+                                strings = strings,
+                                currency = currentCurrency,
+                                preselectedProductId = preselectedAdProductId,
+                                onPreselectConsumed = { preselectedAdProductId = null },
+                                onSelectFarm = viewModel::selectActiveFarm,
+                                onSaveProductAd = { ad -> viewModel.saveProductAd(ad) },
+                                onToggleAdActive = viewModel::toggleProductAdActive,
+                                onDeleteAd = viewModel::deleteProductAd,
                                 onOpenSubscription = openSubscriptionTab
                             )
 
@@ -629,7 +881,7 @@ private fun FarmerShell(
                                 onSubscribe = viewModel::subscribe,
                                 onMarkNotificationsRead = viewModel::markNotificationsRead,
                                 onSubmitSupport = viewModel::submitSupport,
-                                onLogout = viewModel::logout,
+                                onLogout = onLogout,
                                 onMessage = viewModel::showMessage
                             )
                         }

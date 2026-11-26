@@ -1,0 +1,467 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (('email_verified' in request.auth.token) && request.auth.token.email_verified == true &&
+         ('email' in request.auth.token) && request.auth.token.email == 'kingsiam2221@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+             data.email is string && data.email.size() <= 180 &&
+             (!('mobile' in data) || (data.mobile is string && data.mobile.size() <= 40)) &&
+             data.role in ['CUSTOMER', 'FARMER'] &&
+             data.preferredLanguage in ['en', 'bn'] &&
+             data.preferredCurrency in ['BDT', 'USD', 'EUR', 'INR'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFarm(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.farmCode is string && data.farmCode.size() >= 2 && data.farmCode.size() <= 40 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.location is string && data.location.size() <= 120 &&
+             data.address is string && data.address.size() <= 240 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.managerName is string && data.managerName.size() <= 120 &&
+             data.managerPhone is string && data.managerPhone.size() <= 40 &&
+             data.initialInvestment is number && data.initialInvestment >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidMarketplaceProduct(data) {
+      return data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.farmId is string && data.farmId.size() >= 1 && data.farmId.size() <= 128 &&
+             data.farmName is string && data.farmName.size() >= 1 && data.farmName.size() <= 120 &&
+             data.farmLocation is string && data.farmLocation.size() <= 120 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+             data.sourcingType in ['FARM_PRODUCED', 'PURCHASED_RESALE'] &&
+             data.quantity is number && data.quantity >= 0 &&
+             data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 30 &&
+             data.unitCost is number && data.unitCost >= 0 &&
+             data.sellingPrice is number && data.sellingPrice > 0 &&
+             data.listed is bool &&
+             data.description is string && data.description.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidOrder(data) {
+      return data.orderNumber is string && data.orderNumber.size() >= 3 && data.orderNumber.size() <= 40 &&
+             data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128 &&
+             data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120 &&
+             data.customerPhone is string && data.customerPhone.size() <= 40 &&
+             data.deliveryAddress is string && data.deliveryAddress.size() >= 2 && data.deliveryAddress.size() <= 300 &&
+             data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 60 &&
+             data.farmId is string && data.farmId.size() >= 1 && data.farmId.size() <= 128 &&
+             data.farmName is string && data.farmName.size() >= 1 && data.farmName.size() <= 120 &&
+             data.farmOwnerUid is string && data.farmOwnerUid.size() >= 1 && data.farmOwnerUid.size() <= 128 &&
+             data.productId is string && isValidId(data.productId) &&
+             data.itemsSummary is string && data.itemsSummary.size() >= 1 && data.itemsSummary.size() <= 500 &&
+             data.totalAmount is number && data.totalAmount > 0 &&
+             data.status in ['PENDING', 'CONFIRMED', 'DISPATCHED', 'DELIVERED', 'CANCELLATION_REQUESTED', 'CANCELLED'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidNotification(data) {
+      return data.targetUserId is string && data.targetUserId.size() >= 1 && data.targetUserId.size() <= 128 &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             (!('orderId' in data) || (data.orderId is string && isValidId(data.orderId))) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+             data.readFlag is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAgriLand(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             (!('farmId' in data) || (data.farmId is string && data.farmId.size() <= 128)) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+             data.areaSize is number && data.areaSize >= 0 &&
+             data.areaUnit is string && data.areaUnit.size() >= 1 && data.areaUnit.size() <= 30 &&
+             data.location is string && data.location.size() <= 160 &&
+             data.soilOrLandType is string && data.soilOrLandType.size() <= 100 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAgriCrop(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             (!('farmId' in data) || (data.farmId is string && data.farmId.size() <= 128)) &&
+             data.landId is string && isValidId(data.landId) &&
+             data.cropType is string && data.cropType.size() >= 1 && data.cropType.size() <= 60 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+             data.variety is string && data.variety.size() <= 120 &&
+             data.season is string && data.season.size() >= 1 && data.season.size() <= 40 &&
+             data.status in ['GROWING', 'HARVESTED', 'SOLD'] &&
+             data.yieldQuantity is number && data.yieldQuantity >= 0 &&
+             data.yieldUnit is string && data.yieldUnit.size() >= 1 && data.yieldUnit.size() <= 30 &&
+             data.marketPricePerUnit is number && data.marketPricePerUnit >= 0 &&
+             data.yieldMarketWorth is number && data.yieldMarketWorth >= 0 &&
+             data.soldAmount is number && data.soldAmount >= 0 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAgriExpense(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             (!('farmId' in data) || (data.farmId is string && data.farmId.size() <= 128)) &&
+             data.landId is string && isValidId(data.landId) &&
+             (!('cropId' in data) || (data.cropId is string && data.cropId.size() <= 128)) &&
+             data.sector is string && data.sector.size() >= 1 && data.sector.size() <= 60 &&
+             data.customSectorName is string && data.customSectorName.size() <= 120 &&
+             data.amount is number && data.amount > 0 &&
+             data.description is string && data.description.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidProductAd(data) {
+      return data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             (!('productDocId' in data) || (data.productDocId is string && data.productDocId.size() <= 128)) &&
+             data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 160 &&
+             data.farmName is string && data.farmName.size() <= 140 &&
+             data.priceText is string && data.priceText.size() <= 80 &&
+             data.hookHeadlineBn is string && data.hookHeadlineBn.size() >= 1 && data.hookHeadlineBn.size() <= 220 &&
+             data.promoBadgeBn is string && data.promoBadgeBn.size() <= 80 &&
+             data.benefitsPipeSeparatedBn is string && data.benefitsPipeSeparatedBn.size() <= 600 &&
+             data.callToActionBn is string && data.callToActionBn.size() <= 160 &&
+             data.voiceoverScriptBn is string && data.voiceoverScriptBn.size() <= 1200 &&
+             data.orderStepsPipeSeparatedBn is string && data.orderStepsPipeSeparatedBn.size() <= 800 &&
+             data.accentColorHex is string && data.accentColorHex.size() <= 20 &&
+             data.active is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isOwner(adminUid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isOwner(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'role', 'preferredLanguage', 'preferredCurrency', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'mobile', 'role', 'preferredLanguage', 'preferredCurrency', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       (
+                         (
+                           isOwner(userId) &&
+                           incoming().userId == existing().userId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'mobile', 'role', 'preferredLanguage', 'preferredCurrency', 'updatedAt'])
+                         ) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+
+      match /farms/{farmId} {
+        allow get: if isSignedIn() && isValidId(farmId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(farmId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'farmCode', 'name', 'location', 'address', 'category', 'managerName', 'managerPhone', 'initialInvestment', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'farmCode', 'name', 'location', 'address', 'category', 'managerName', 'managerPhone', 'initialInvestment', 'createdAt', 'updatedAt']) &&
+                         isValidFarm(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(farmId) &&
+                         isValidFarm(incoming()) &&
+                         (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == existing().userId &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['farmCode', 'name', 'location', 'address', 'category', 'managerName', 'managerPhone', 'initialInvestment', 'updatedAt'])
+                           ) ||
+                           isAdmin()
+                         );
+
+        allow delete: if isSignedIn() && isValidId(farmId) && (isOwner(userId) || isAdmin());
+      }
+
+      match /notifications/{notificationId} {
+        allow get: if isSignedIn() && isValidId(notificationId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         incoming().targetUserId == userId &&
+                         incoming().senderUid == request.auth.uid &&
+                         incoming().readFlag == false &&
+                         incoming().keys().hasAll(['targetUserId', 'senderUid', 'title', 'message', 'category', 'readFlag', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['targetUserId', 'senderUid', 'orderId', 'title', 'message', 'category', 'readFlag', 'createdAt', 'updatedAt']) &&
+                         isValidNotification(incoming()) &&
+                         (
+                           isOwner(userId) ||
+                           isAdmin() ||
+                           (
+                             'orderId' in incoming() &&
+                             existsAfter(/databases/$(database)/documents/orders/$(incoming().orderId)) &&
+                             getAfter(/databases/$(database)/documents/orders/$(incoming().orderId)).data.farmOwnerUid == userId &&
+                             getAfter(/databases/$(database)/documents/orders/$(incoming().orderId)).data.customerUid == request.auth.uid
+                           )
+                         );
+
+        allow update: if isSignedIn() &&
+                         isValidId(notificationId) &&
+                         isValidNotification(incoming()) &&
+                         (
+                           (
+                             isOwner(userId) &&
+                             incoming().targetUserId == existing().targetUserId &&
+                             incoming().senderUid == existing().senderUid &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['readFlag', 'updatedAt'])
+                           ) ||
+                           isAdmin()
+                         );
+
+        allow delete: if isSignedIn() && isValidId(notificationId) && (isOwner(userId) || isAdmin());
+      }
+
+      match /agri_lands/{landId} {
+        allow get: if isSignedIn() && isValidId(landId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(landId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'name', 'areaSize', 'areaUnit', 'location', 'soilOrLandType', 'notes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'farmId', 'name', 'areaSize', 'areaUnit', 'location', 'soilOrLandType', 'notes', 'createdAt', 'updatedAt']) &&
+                         isValidAgriLand(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(landId) &&
+                         isValidAgriLand(incoming()) &&
+                         (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == existing().userId &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['farmId', 'name', 'areaSize', 'areaUnit', 'location', 'soilOrLandType', 'notes', 'updatedAt'])
+                           ) ||
+                           isAdmin()
+                         );
+
+        allow delete: if isSignedIn() && isValidId(landId) && (isOwner(userId) || isAdmin());
+      }
+
+      match /agri_crops/{cropId} {
+        allow get: if isSignedIn() && isValidId(cropId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(cropId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'landId', 'cropType', 'title', 'variety', 'season', 'status', 'yieldQuantity', 'yieldUnit', 'marketPricePerUnit', 'yieldMarketWorth', 'soldAmount', 'notes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'farmId', 'landId', 'cropType', 'title', 'variety', 'season', 'status', 'yieldQuantity', 'yieldUnit', 'marketPricePerUnit', 'yieldMarketWorth', 'soldAmount', 'notes', 'createdAt', 'updatedAt']) &&
+                         isValidAgriCrop(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(cropId) &&
+                         isValidAgriCrop(incoming()) &&
+                         (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == existing().userId &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['farmId', 'landId', 'cropType', 'title', 'variety', 'season', 'status', 'yieldQuantity', 'yieldUnit', 'marketPricePerUnit', 'yieldMarketWorth', 'soldAmount', 'notes', 'updatedAt'])
+                           ) ||
+                           isAdmin()
+                         );
+
+        allow delete: if isSignedIn() && isValidId(cropId) && (isOwner(userId) || isAdmin());
+      }
+
+      match /agri_expenses/{expenseId} {
+        allow get: if isSignedIn() && isValidId(expenseId) && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(expenseId) &&
+                         isOwner(userId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'landId', 'sector', 'customSectorName', 'amount', 'description', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'farmId', 'landId', 'cropId', 'sector', 'customSectorName', 'amount', 'description', 'createdAt', 'updatedAt']) &&
+                         isValidAgriExpense(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(expenseId) &&
+                         isValidAgriExpense(incoming()) &&
+                         (
+                           (
+                             isOwner(userId) &&
+                             incoming().userId == existing().userId &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['farmId', 'landId', 'cropId', 'sector', 'customSectorName', 'amount', 'description', 'updatedAt'])
+                           ) ||
+                           isAdmin()
+                         );
+
+        allow delete: if isSignedIn() && isValidId(expenseId) && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    match /marketplace_products/{productId} {
+      allow get: if isSignedIn() && isValidId(productId) && (existing().listed == true || existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.listed == true || resource.data.ownerUid == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(productId) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().keys().hasAll(['ownerUid', 'farmId', 'farmName', 'farmLocation', 'name', 'category', 'sourcingType', 'quantity', 'unit', 'unitCost', 'sellingPrice', 'listed', 'description', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['ownerUid', 'farmId', 'farmName', 'farmLocation', 'name', 'category', 'sourcingType', 'quantity', 'unit', 'unitCost', 'sellingPrice', 'listed', 'description', 'createdAt', 'updatedAt']) &&
+                       isValidMarketplaceProduct(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(productId) &&
+                       isValidMarketplaceProduct(incoming()) &&
+                       (
+                         (
+                           existing().ownerUid == request.auth.uid &&
+                           incoming().ownerUid == existing().ownerUid &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['farmId', 'farmName', 'farmLocation', 'name', 'category', 'sourcingType', 'quantity', 'unit', 'unitCost', 'sellingPrice', 'listed', 'description', 'updatedAt'])
+                         ) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(productId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && isValidId(orderId) && (existing().customerUid == request.auth.uid || existing().farmOwnerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.customerUid == request.auth.uid || resource.data.farmOwnerUid == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(orderId) &&
+                       incoming().customerUid == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['orderNumber', 'customerUid', 'customerName', 'customerPhone', 'deliveryAddress', 'paymentMethod', 'farmId', 'farmName', 'farmOwnerUid', 'productId', 'itemsSummary', 'totalAmount', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['orderNumber', 'customerUid', 'customerName', 'customerPhone', 'deliveryAddress', 'paymentMethod', 'farmId', 'farmName', 'farmOwnerUid', 'productId', 'itemsSummary', 'totalAmount', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidOrder(incoming()) &&
+                       exists(/databases/$(database)/documents/marketplace_products/$(incoming().productId)) &&
+                       get(/databases/$(database)/documents/marketplace_products/$(incoming().productId)).data.ownerUid == incoming().farmOwnerUid;
+
+      allow update: if isSignedIn() &&
+                       isValidId(orderId) &&
+                       isValidOrder(incoming()) &&
+                       (
+                         isAdmin() ||
+                         (
+                           !(existing().status in ['DELIVERED', 'CANCELLED']) &&
+                           incoming().customerUid == existing().customerUid &&
+                           incoming().farmOwnerUid == existing().farmOwnerUid &&
+                           incoming().farmId == existing().farmId &&
+                           incoming().productId == existing().productId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+                           (
+                             (
+                               existing().farmOwnerUid == request.auth.uid &&
+                               incoming().status in ['CONFIRMED', 'DISPATCHED', 'DELIVERED', 'CANCELLED']
+                             ) ||
+                             (
+                               existing().customerUid == request.auth.uid &&
+                               existing().status == 'PENDING' &&
+                               incoming().status == 'CANCELLATION_REQUESTED'
+                             )
+                           )
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(orderId) && isAdmin();
+    }
+
+    match /product_ads/{adId} {
+      allow get: if isSignedIn() && isValidId(adId) && (existing().active == true || existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.active == true || resource.data.ownerUid == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(adId) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().keys().hasAll(['ownerUid', 'productName', 'farmName', 'priceText', 'hookHeadlineBn', 'promoBadgeBn', 'benefitsPipeSeparatedBn', 'callToActionBn', 'voiceoverScriptBn', 'orderStepsPipeSeparatedBn', 'accentColorHex', 'active', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['ownerUid', 'productDocId', 'productName', 'farmName', 'priceText', 'hookHeadlineBn', 'promoBadgeBn', 'benefitsPipeSeparatedBn', 'callToActionBn', 'voiceoverScriptBn', 'orderStepsPipeSeparatedBn', 'accentColorHex', 'active', 'createdAt', 'updatedAt']) &&
+                       isValidProductAd(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(adId) &&
+                       isValidProductAd(incoming()) &&
+                       (
+                         (
+                           existing().ownerUid == request.auth.uid &&
+                           incoming().ownerUid == existing().ownerUid &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['productDocId', 'productName', 'farmName', 'priceText', 'hookHeadlineBn', 'promoBadgeBn', 'benefitsPipeSeparatedBn', 'callToActionBn', 'voiceoverScriptBn', 'orderStepsPipeSeparatedBn', 'accentColorHex', 'active', 'updatedAt'])
+                         ) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidId(adId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+  }
+}

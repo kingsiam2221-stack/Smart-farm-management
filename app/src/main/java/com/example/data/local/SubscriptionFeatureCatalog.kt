@@ -42,6 +42,13 @@ enum class SubscriptionFeature(
         descEn = "Farm analytics charts, live audit & Gemini AI Advisor",
         descBn = "খামার বিশ্লেষণ গ্রাফ ও এআই পরামর্শদাতা"
     ),
+    AI_AD_VIDEO_STUDIO(
+        key = "AI_AD_VIDEO_STUDIO",
+        titleEn = "Google AI Bengali Video Ad Studio",
+        titleBn = "Google AI বাংলা পণ্য বিজ্ঞাপন ভিডিও স্টুডিও",
+        descEn = "Turn product photos into Bengali video ads + order screen demos",
+        descBn = "যেকোনো পণ্যের ছবি থেকে বাংলা বিজ্ঞাপন ভিডিও ও অর্ডার ডেমো তৈরি"
+    ),
     INVENTORY_EXPENSES(
         key = "INVENTORY_EXPENSES",
         titleEn = "Inventory Stock & Expense Tracking",
@@ -62,6 +69,13 @@ enum class SubscriptionFeature(
         titleBn = "অনলাইন পণ্য যোগ ও মার্কেটপ্লেস স্টোর",
         descEn = "List rice, wheat, mustard & any agricultural goods online",
         descBn = "চাল, গম, সরিষাসহ যেকোনো কৃষি পণ্য অনলাইনে যোগ ও বিক্রি"
+    ),
+    AGRICULTURE_CROP_LEDGER(
+        key = "AGRICULTURE_CROP_LEDGER",
+        titleEn = "Agriculture, Crops & Land Ledger",
+        titleBn = "কৃষি, ফসল ও জমির লাভ-ক্ষতি হিসাব",
+        descEn = "Track rice, wheat, corn, cattle feed, land costs & yield value",
+        descBn = "ধান, গম, ভুট্টা, গোখাদ্য, জমির খরচ, ফলনের মূল্য ও লাভ-ক্ষতি"
     ),
     FINANCIAL_REPORTS_EXPORT(
         key = "FINANCIAL_REPORTS_EXPORT",

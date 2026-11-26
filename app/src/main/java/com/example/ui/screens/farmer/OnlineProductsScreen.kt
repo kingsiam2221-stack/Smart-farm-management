@@ -59,7 +59,8 @@ fun OnlineProductsScreen(
     onDeleteProduct: (InventoryItemEntity) -> Unit,
     onOpenAddFarm: () -> Unit,
     onOpenOrders: () -> Unit,
-    onOpenSubscription: () -> Unit
+    onOpenSubscription: () -> Unit,
+    onCreateAdForProduct: (InventoryItemEntity) -> Unit = {}
 ) {
     val isBn = isBangla()
     val policy = state.accessPolicy
@@ -557,6 +558,18 @@ fun OnlineProductsScreen(
 
                                     if (canManage) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (policy.has(AppPermission.AI_AD_STUDIO)) {
+                                                IconButton(
+                                                    onClick = { onCreateAdForProduct(item) },
+                                                    modifier = Modifier.testTag("create_ad_for_product_${item.id}")
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.MovieCreation,
+                                                        contentDescription = tr("AI Video Ad", "AI বিজ্ঞাপন ভিডিও"),
+                                                        tint = MaterialTheme.colorScheme.tertiary
+                                                    )
+                                                }
+                                            }
                                             Switch(
                                                 checked = item.listInMarketplace,
                                                 onCheckedChange = { checked -> onToggleLive(item, checked) },
