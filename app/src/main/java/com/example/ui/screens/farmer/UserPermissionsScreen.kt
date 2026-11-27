@@ -28,6 +28,7 @@ import com.example.i18n.isBangla
 import com.example.i18n.tr
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FeaturePlanBadge
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.components.SubscriptionRequiredLockCard
 import com.example.ui.state.FarmerDashboardState
 
@@ -823,6 +824,7 @@ fun AdminPermissionsManagementPanel(
             onDismissRequest = { showAddCustomOptionDialog = false },
             title = { Text(tr("Add New Permission Option", "নতুন অনুমতি অপশন যোগ করুন")) },
             text = {
+                ProvideSafeTextToolbar {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -869,6 +871,7 @@ fun AdminPermissionsManagementPanel(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                }
             },
             confirmButton = {
                 Button(
@@ -903,6 +906,7 @@ fun AdminPermissionsManagementPanel(
             onDismissRequest = { loginTargetEmployee = null },
             title = { Text("${tr("Employee Login", "কর্মচারী লগইন")}: ${empForLogin.name}") },
             text = {
+                ProvideSafeTextToolbar {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -943,6 +947,7 @@ fun AdminPermissionsManagementPanel(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                }
             },
             confirmButton = {
                 Button(
@@ -974,6 +979,7 @@ fun AdminPermissionsManagementPanel(
             onDismissRequest = { showAddEmployeeDialog = false },
             title = { Text(strings.addEmployee) },
             text = {
+                ProvideSafeTextToolbar {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1010,6 +1016,7 @@ fun AdminPermissionsManagementPanel(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                }
                 }
             },
             confirmButton = {

@@ -135,7 +135,10 @@ object DatabaseSeeder {
                 openingDate = now - 180 * DAY_MS,
                 managerName = "Karim Mia",
                 managerPhone = "+8801722334455",
-                initialInvestment = 240_000.0
+                initialInvestment = 240_000.0,
+                bkashNumber = "01711-223344",
+                nagadNumber = "01811-223344",
+                bankAccountInfo = "Islami Bank • Green Valley Agro • A/C 2050-1122-3344"
             )
         )
         val farm2Id = farmDao.insert(
@@ -149,7 +152,10 @@ object DatabaseSeeder {
                 openingDate = now - 300 * DAY_MS,
                 managerName = "Salma Khatun",
                 managerPhone = "+8801733445566",
-                initialInvestment = 620_000.0
+                initialInvestment = 620_000.0,
+                bkashNumber = "01711-223344",
+                nagadNumber = "01811-223344",
+                bankAccountInfo = "Dutch-Bangla Bank • Padma Dairy • A/C 118-110-445566"
             )
         )
         val farm3Id = farmDao.insert(
@@ -163,7 +169,10 @@ object DatabaseSeeder {
                 openingDate = now - 95 * DAY_MS,
                 managerName = "Tariq Hasan",
                 managerPhone = "+8801744556677",
-                initialInvestment = 135_000.0
+                initialInvestment = 135_000.0,
+                bkashNumber = "01744-556677",
+                nagadNumber = "01944-556677",
+                bankAccountInfo = "Sonali Bank • Sunbeam Hatchery • A/C 0041-889911"
             )
         )
 
@@ -400,7 +409,10 @@ object DatabaseSeeder {
                 supplierName = "Green Valley Coop",
                 supplierPhone = "+8801722334455",
                 listInMarketplace = true,
-                description = "Farm-fresh free-range brown eggs packed in hygienic 30-egg trays."
+                description = "Farm-fresh free-range brown eggs packed in hygienic 30-egg trays.",
+                sellerBkashNumber = "01711-223344",
+                sellerNagadNumber = "01811-223344",
+                sellerBankAccount = "Islami Bank • Green Valley Agro • A/C 2050-1122-3344"
             )
         )
         val invMilkId = invDao.insertItem(
@@ -418,7 +430,10 @@ object DatabaseSeeder {
                 supplierName = "Padma Chilling Unit",
                 supplierPhone = "+8801733445566",
                 listInMarketplace = true,
-                description = "Chilled unprocessed whole cow milk bottled fresh every morning."
+                description = "Chilled unprocessed whole cow milk bottled fresh every morning.",
+                sellerBkashNumber = "01711-223344",
+                sellerNagadNumber = "01811-223344",
+                sellerBankAccount = "Dutch-Bangla Bank • Padma Dairy • A/C 118-110-445566"
             )
         )
         invDao.insertItem(
@@ -437,7 +452,10 @@ object DatabaseSeeder {
                 supplierPhone = "+8801744556677",
                 listInMarketplace = true,
                 description = "Protein-rich speckled quail eggs from healthy Coturnix birds.",
-                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key,
+                sellerBkashNumber = "01744-556677",
+                sellerNagadNumber = "01944-556677",
+                sellerBankAccount = "Sonali Bank • Sunbeam Hatchery • A/C 0041-889911"
             )
         )
         invDao.insertItem(
@@ -455,7 +473,10 @@ object DatabaseSeeder {
                 supplierPhone = "+8801722334455",
                 listInMarketplace = true,
                 description = "Clean, aged Dinajpur Miniket rice harvested and packed directly from partner fields.",
-                sourcingType = ProductSourcingType.FARM_PRODUCED.key
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key,
+                sellerBkashNumber = "01711-223344",
+                sellerNagadNumber = "01811-223344",
+                sellerBankAccount = "Islami Bank • Green Valley Agro • A/C 2050-1122-3344"
             )
         )
         invDao.insertItem(
@@ -473,7 +494,10 @@ object DatabaseSeeder {
                 supplierPhone = "+8801744556677",
                 listInMarketplace = true,
                 description = "Cold-pressed mustard oil and fresh mustard seeds sourced from Bogura growers for resale.",
-                sourcingType = ProductSourcingType.PURCHASED_RESALE.key
+                sourcingType = ProductSourcingType.PURCHASED_RESALE.key,
+                sellerBkashNumber = "01744-556677",
+                sellerNagadNumber = "01944-556677",
+                sellerBankAccount = "Sonali Bank • Sunbeam Hatchery • A/C 0041-889911"
             )
         )
         invDao.insertItem(
@@ -607,7 +631,11 @@ object DatabaseSeeder {
                 customerUserId = customerId,
                 customerName = "Nadia Rahman",
                 customerPhone = "+8801811556677",
-                deliveryAddress = "Apt 5B, Dhanmondi 27, Dhaka",
+                deliveryAddress = "Apt 5B, Road 9, Dhanmondi 27, PS: Dhanmondi, District: Dhaka",
+                deliveryDistrict = "Dhaka",
+                deliveryPoliceStation = "Dhanmondi",
+                deliveryLandmark = "Near Rapa Plaza",
+                paymentReference = "BK-880192",
                 farmId = farm1Id,
                 farmOwnerUserId = farmerId,
                 farmName = "Green Valley Poultry",
@@ -625,7 +653,11 @@ object DatabaseSeeder {
                 customerUserId = customerId,
                 customerName = "Nadia Rahman",
                 customerPhone = "+8801811556677",
-                deliveryAddress = "Apt 5B, Dhanmondi 27, Dhaka",
+                deliveryAddress = "Apt 5B, Road 9, Dhanmondi 27, PS: Dhanmondi, District: Dhaka",
+                deliveryDistrict = "Dhaka",
+                deliveryPoliceStation = "Dhanmondi",
+                deliveryLandmark = "Near Rapa Plaza",
+                paymentReference = "COD",
                 farmId = farm2Id,
                 farmOwnerUserId = farmerId,
                 farmName = "Padma Dairy & Cattle",
@@ -713,7 +745,131 @@ object DatabaseSeeder {
                 amount = 15_000.0,
                 monthLabel = "October 2026",
                 paymentDate = now - 15 * DAY_MS,
-                note = "Monthly salary paid via bKash"
+                note = "Monthly salary paid via bKash",
+                paymentType = EmployeePaymentType.SALARY.key
+            )
+        )
+        opsDao.insertSalaryPayment(
+            SalaryPaymentEntity(
+                employeeId = emp1Id,
+                farmId = farm1Id,
+                ownerUserId = farmerId,
+                amount = 500.0,
+                monthLabel = "Festival & Attendance Bonus",
+                paymentDate = now - 8 * DAY_MS,
+                note = "Zero late check-ins bonus",
+                paymentType = EmployeePaymentType.BONUS.key
+            )
+        )
+        opsDao.insertSalaryPayment(
+            SalaryPaymentEntity(
+                employeeId = emp2Id,
+                farmId = farm2Id,
+                ownerUserId = farmerId,
+                amount = 350.0,
+                monthLabel = "Transport & Chiller Expense",
+                paymentDate = now - 3 * DAY_MS,
+                note = "Local transport for chilled milk samples",
+                paymentType = EmployeePaymentType.EXPENSE.key
+            )
+        )
+
+        // Seed Morning-to-Night Employee Task Targets & Automated Messages
+        opsDao.insertTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmerId,
+                farmId = farm1Id,
+                employeeId = emp1Id,
+                employeeName = "Karim Mia",
+                timeSlot = EmployeeTaskTimeSlot.MORNING.key,
+                title = "Morning Feed & Fresh Water Check",
+                description = "Distribute morning layer ration & clean all poultry drinkers in Shed A & B.",
+                targetGoalText = "100% sheds fed before 8:30 AM",
+                rewardBonusAmount = 10.0,
+                status = EmployeeTaskStatus.PENDING.key,
+                targetDateMillis = now,
+                createdAt = now - 3 * 3600_000L
+            )
+        )
+        opsDao.insertTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmerId,
+                farmId = farm1Id,
+                employeeId = emp1Id,
+                employeeName = "Karim Mia",
+                timeSlot = EmployeeTaskTimeSlot.AFTERNOON.key,
+                title = "Egg Collection & Tray Grading",
+                description = "Collect afternoon eggs, separate cracked eggs, and log exact tray stock.",
+                targetGoalText = "280+ eggs logged cleanly",
+                rewardBonusAmount = 20.0,
+                status = EmployeeTaskStatus.PENDING.key,
+                targetDateMillis = now,
+                createdAt = now - 2 * 3600_000L
+            )
+        )
+        opsDao.insertTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmerId,
+                farmId = farm1Id,
+                employeeId = emp1Id,
+                employeeName = "Karim Mia",
+                timeSlot = EmployeeTaskTimeSlot.NIGHT.key,
+                title = "Night Coop Security & Light Off",
+                description = "Verify coop locks, check brooder temperature, and submit night report.",
+                targetGoalText = "Night check completed by 9:30 PM",
+                rewardBonusAmount = 20.0,
+                status = EmployeeTaskStatus.PENDING.key,
+                targetDateMillis = now,
+                createdAt = now - 3600_000L
+            )
+        )
+        opsDao.insertTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                employeeId = emp2Id,
+                employeeName = "Salma Khatun",
+                timeSlot = EmployeeTaskTimeSlot.MORNING.key,
+                title = "Morning Milking & Chiller Log",
+                description = "Complete morning milking for 12 cows and record milk temperature in chiller.",
+                targetGoalText = "All bottles sealed & cooled",
+                rewardBonusAmount = 20.0,
+                status = EmployeeTaskStatus.PENDING.key,
+                targetDateMillis = now,
+                createdAt = now - 2 * 3600_000L
+            )
+        )
+
+        opsDao.insertAutoMessage(
+            EmployeeAutoMessageEntity(
+                ownerUserId = farmerId,
+                farmId = farm1Id,
+                employeeId = emp1Id,
+                senderUserId = empUser1Id,
+                senderName = "Karim Mia",
+                senderRole = UserRole.EMPLOYEE.name,
+                recipientLabel = "Rahim Uddin (Farm Owner)",
+                messageType = AutoMessageType.MORNING_CHECKIN.key,
+                subject = "Morning Check-In — Green Valley Poultry",
+                messageBody = "Shed A & B opened at 6:15 AM. Water lines clean and birds active.",
+                isAutoGenerated = true,
+                sentAt = now - 2 * 3600_000L
+            )
+        )
+        opsDao.insertAutoMessage(
+            EmployeeAutoMessageEntity(
+                ownerUserId = farmerId,
+                farmId = farm2Id,
+                employeeId = emp2Id,
+                senderUserId = empUser2Id,
+                senderName = "Salma Khatun",
+                senderRole = UserRole.EMPLOYEE.name,
+                recipientLabel = "Rahim Uddin (Farm Owner)",
+                messageType = AutoMessageType.MIDDAY_UPDATE.key,
+                subject = "Midday Dairy Update — Padma Dairy",
+                messageBody = "95L milk bottled and chilled at 4°C. Ready for customer dispatch.",
+                isAutoGenerated = true,
+                sentAt = now - 3600_000L
             )
         )
 
@@ -983,7 +1139,8 @@ object DatabaseSeeder {
         val userDao = db.userDao()
         val allEmployees: List<EmployeeEntity> = opsDao.observeAllEmployees().first()
         for (emp in allEmployees) {
-            if (permDao.getPermissionsForEmployee(emp.id).isEmpty()) {
+            val existingPerms = permDao.getPermissionsForEmployee(emp.id)
+            if (existingPerms.isEmpty()) {
                 val keys = PermissionCatalog.defaultGrantedKeysFromLegacyFlags(emp)
                 permDao.upsertPermissions(
                     AppPermission.entries.map { p ->
@@ -995,6 +1152,28 @@ object DatabaseSeeder {
                         )
                     }
                 )
+            } else {
+                val existingByKey = existingPerms.associateBy { it.permissionKey }
+                val missing = mutableListOf<EmployeePermissionEntity>()
+                if (!existingByKey.containsKey(AppPermission.STAFF_TARGETS_VIEW.key)) {
+                    missing += EmployeePermissionEntity(
+                        employeeId = emp.id,
+                        ownerUserId = emp.ownerUserId,
+                        permissionKey = AppPermission.STAFF_TARGETS_VIEW.key,
+                        granted = true
+                    )
+                }
+                if (!existingByKey.containsKey(AppPermission.STAFF_HR_MANAGE.key)) {
+                    missing += EmployeePermissionEntity(
+                        employeeId = emp.id,
+                        ownerUserId = emp.ownerUserId,
+                        permissionKey = AppPermission.STAFF_HR_MANAGE.key,
+                        granted = existingByKey[AppPermission.EMPLOYEES_MANAGE.key]?.granted ?: false
+                    )
+                }
+                if (missing.isNotEmpty()) {
+                    permDao.upsertPermissions(missing)
+                }
             }
         }
         // Ensure seeded employee users link cleanly if Farmer exists and they don't exist yet

@@ -1,5 +1,5 @@
 {
-  "name": "Smart Farm Management",
+  "name": "Smart Buy and Sell",
   "description": "All-in-one digital farming platform for multi-farm, livestock, poultry, egg production, inventory, sales, expenses, customers, online orders, subscriptions, and Super Admin management.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

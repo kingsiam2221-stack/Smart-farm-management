@@ -43,6 +43,7 @@ import com.example.data.local.*
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyFormatter
 import com.example.i18n.CurrencyOption
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.i18n.tr
 import com.example.ui.components.*
 import com.example.ui.state.FarmerDashboardState
@@ -826,15 +827,17 @@ fun AiProductAdStudioScreen(
             onDismissRequest = { showEditScriptDialog = false },
             title = { Text(tr("Customize Bengali Ad Copy", "বাংলা বিজ্ঞাপনের লেখা সম্পাদনা")) },
             text = {
-                Column(
-                    modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(value = hook, onValueChange = { hook = it }, label = { Text(tr("Headline (Bangla)", "শিরোনাম (বাংলা)")) }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = badge, onValueChange = { badge = it }, label = { Text(tr("Promo Badge", "অফার ব্যাজ")) }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = cta, onValueChange = { cta = it }, label = { Text(tr("Order Button CTA", "অর্ডার বাটনের লেখা")) }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = voiceover, onValueChange = { voiceover = it }, label = { Text(tr("Voiceover Narration (Bangla)", "ভয়েসওভার স্ক্রিপ্ট")) }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = outroGuide, onValueChange = { outroGuide = it }, label = { Text(tr("Video End: App Download & Online Order", "ভিডিও শেষে: ডাউনলোড ও অর্ডার নিয়ম")) }, modifier = Modifier.fillMaxWidth())
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(value = hook, onValueChange = { hook = it }, label = { Text(tr("Headline (Bangla)", "শিরোনাম (বাংলা)")) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = badge, onValueChange = { badge = it }, label = { Text(tr("Promo Badge", "অফার ব্যাজ")) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = cta, onValueChange = { cta = it }, label = { Text(tr("Order Button CTA", "অর্ডার বাটনের লেখা")) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = voiceover, onValueChange = { voiceover = it }, label = { Text(tr("Voiceover Narration (Bangla)", "ভয়েসওভার স্ক্রিপ্ট")) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = outroGuide, onValueChange = { outroGuide = it }, label = { Text(tr("Video End: App Download & Online Order", "ভিডিও শেষে: ডাউনলোড ও অর্ডার নিয়ম")) }, modifier = Modifier.fillMaxWidth())
+                    }
                 }
             },
             confirmButton = {

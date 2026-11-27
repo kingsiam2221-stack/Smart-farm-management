@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,10 +20,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
@@ -41,6 +47,7 @@ import com.example.i18n.tr
 import com.example.ui.components.AppSettingsScreen
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.ProductAdVideoPlayer
+import com.example.ui.components.ProvideSafeTextToolbar
 import kotlinx.coroutines.launch
 import com.example.ui.components.formatShortDate
 import com.example.ui.state.CustomerPortalState
@@ -57,7 +64,7 @@ fun CustomerPortalScreen(
     darkModeOverride: Boolean?,
     onAddToCart: (InventoryItemEntity) -> Unit,
     onUpdateCartQty: (Long, Double) -> Unit,
-    onPlaceOrder: (String, String, () -> Unit) -> Unit,
+    onPlaceOrder: (String, String, String, String, String, String, String, String, () -> Unit) -> Unit,
     onRequestCancelOrder: (OrderEntity) -> Unit,
     onMarkNotificationsRead: () -> Unit,
     onUpdateProfile: (String, String, String?) -> Unit,
@@ -135,8 +142,25 @@ fun CustomerPortalScreen(
                             onOpenSettings = { selectedTab = 3 },
                             onAddToCart = onAddToCart
                         )
-                        1 -> CartCheckoutTab(state, strings, currentCurrency, onUpdateCartQty) { addr, method ->
-                            onPlaceOrder(addr, method) { selectedTab = 2 }
+                        1 -> CartCheckoutTab(
+                            user = user,
+                            state = state,
+                            systemSettings = systemSettings,
+                            strings = strings,
+                            currency = currentCurrency,
+                            onUpdateQty = onUpdateCartQty,
+                            onMessage = onMessage
+                        ) { name, phone, district, policeStation, addr, landmark, method, paymentRef ->
+                            onPlaceOrder(
+                                name,
+                                phone,
+                                district,
+                                policeStation,
+                                addr,
+                                landmark,
+                                method,
+                                paymentRef
+                            ) { selectedTab = 2 }
                         }
                         2 -> CustomerOrdersTab(state, strings, currentCurrency, onRequestCancelOrder)
                         else -> AppSettingsScreen(
@@ -514,12 +538,13 @@ private fun ShopCatalogTab(
                 )
             },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     ProductAdVideoPlayer(
                         storyboard = adStoryboard,
                         imageUri = ad.imageUri,
@@ -554,6 +579,7 @@ private fun ShopCatalogTab(
                         ) {
                             Text(if (exportingShare) "..." else tr("Share All", "শেয়ার"), maxLines = 1)
                         }
+                    }
                     }
                 }
             },
@@ -603,12 +629,13 @@ private fun ShopCatalogTab(
                 )
             },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     ProductAdVideoPlayer(
                         storyboard = demoStoryboard,
                         imageUri = sample?.imageUri,
@@ -642,6 +669,7 @@ private fun ShopCatalogTab(
                             Text(if (exportingShare) "..." else tr("Share All", "শেয়ার"), maxLines = 1)
                         }
                     }
+                    }
                 }
             },
             confirmButton = {
@@ -651,95 +679,397 @@ private fun ShopCatalogTab(
     }
 }
 
+private data class SellerReceivingInfo(
+    val farmId: Long,
+    val farmName: String,
+    val bkash: String,
+    val nagad: String,
+    val bank: String
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CartCheckoutTab(
+    user: UserEntity,
     state: CustomerPortalState,
+    systemSettings: SystemSettingsEntity,
     strings: AppStrings,
     currency: CurrencyOption,
     onUpdateQty: (Long, Double) -> Unit,
-    onCheckout: (String, String) -> Unit
+    onMessage: (String) -> Unit,
+    onCheckout: (String, String, String, String, String, String, String, String) -> Unit
 ) {
     val isBn = isBangla()
+    val clipboardManager = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+
+    var recipientName by remember(user.id) { mutableStateOf(user.name) }
+    var recipientPhone by remember(user.id) { mutableStateOf(user.mobile) }
+    var district by remember { mutableStateOf("") }
+    var policeStation by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
-    var paymentMethod by remember { mutableStateOf(currency.gateways.firstOrNull() ?: "Cash on Delivery") }
+    var landmark by remember { mutableStateOf("") }
+
+    val rawGateways = remember(currency.gateways) {
+        (listOf("Cash on Delivery", "bKash", "Nagad", "Bank Transfer") + currency.gateways).distinct()
+    }
+    val availablePaymentMethods = remember(rawGateways, systemSettings) {
+        rawGateways.filter { gw ->
+            when {
+                gw.contains("bkash", ignoreCase = true) -> systemSettings.orderShowBkash
+                gw.contains("nagad", ignoreCase = true) -> systemSettings.orderShowNagad
+                gw.contains("bank", ignoreCase = true) -> systemSettings.orderShowBank
+                gw.contains("cash", ignoreCase = true) || gw.contains("cod", ignoreCase = true) -> systemSettings.orderShowCod
+                else -> true
+            }
+        }
+    }
+    var paymentMethod by remember { mutableStateOf(availablePaymentMethods.firstOrNull() ?: "") }
+    LaunchedEffect(availablePaymentMethods) {
+        if (availablePaymentMethods.isEmpty()) {
+            paymentMethod = ""
+        } else if (paymentMethod !in availablePaymentMethods) {
+            paymentMethod = availablePaymentMethods.first()
+        }
+    }
+
+    var paymentReference by remember { mutableStateOf("") }
     val total = state.cart.sumOf { it.item.sellingPrice * it.quantity }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text("${strings.cart} (${state.cart.size})", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        }
-        if (state.cart.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    icon = Icons.Default.ShoppingCart,
-                    title = tr("Your Cart Is Empty", "আপনার কার্ট খালি"),
-                    subtitle = tr(
-                        "Browse farm-fresh products in the Shop tab and add items to checkout.",
-                        "বাজার ট্যাব থেকে তাজা খামার পণ্য কার্টে যোগ করে অর্ডার করুন।"
+    val sellerFallbackPrefix = tr("Seller Farm #", "বিক্রেতা খামার #")
+    val sellerReceivingAccounts = remember(state.cart, state.farmsById, systemSettings, sellerFallbackPrefix) {
+        state.cart
+            .groupBy { it.item.farmId }
+            .mapNotNull { (farmId, entries) ->
+                val farm = state.farmsById[farmId]
+                val firstItem = entries.firstOrNull()?.item
+                val rawBkash = firstItem?.sellerBkashNumber?.takeIf { it.isNotBlank() } ?: farm?.bkashNumber.orEmpty()
+                val rawNagad = firstItem?.sellerNagadNumber?.takeIf { it.isNotBlank() } ?: farm?.nagadNumber.orEmpty()
+                val rawBank = firstItem?.sellerBankAccount?.takeIf { it.isNotBlank() } ?: farm?.bankAccountInfo.orEmpty()
+
+                val effectiveBkash = when {
+                    !systemSettings.orderShowBkash -> ""
+                    systemSettings.orderOverrideSellerPayments -> systemSettings.orderBkashNumber.trim()
+                    else -> rawBkash.ifBlank { systemSettings.orderBkashNumber.trim() }
+                }
+                val effectiveNagad = when {
+                    !systemSettings.orderShowNagad -> ""
+                    systemSettings.orderOverrideSellerPayments -> systemSettings.orderNagadNumber.trim()
+                    else -> rawNagad.ifBlank { systemSettings.orderNagadNumber.trim() }
+                }
+                val effectiveBank = when {
+                    !systemSettings.orderShowBank -> ""
+                    systemSettings.orderOverrideSellerPayments -> systemSettings.orderBankAccount.trim()
+                    else -> rawBank.ifBlank { systemSettings.orderBankAccount.trim() }
+                }
+
+                if (effectiveBkash.isBlank() && effectiveNagad.isBlank() && effectiveBank.isBlank()) {
+                    null
+                } else {
+                    SellerReceivingInfo(
+                        farmId = farmId,
+                        farmName = farm?.name ?: "$sellerFallbackPrefix$farmId",
+                        bkash = effectiveBkash,
+                        nagad = effectiveNagad,
+                        bank = effectiveBank
                     )
-                )
+                }
             }
-        } else {
-            items(state.cart, key = { it.item.id }) { entry ->
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(entry.item.name, fontWeight = FontWeight.Bold)
-                            Text("${CurrencyFormatter.format(entry.item.sellingPrice, currency)} / ${entry.item.unit}", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { onUpdateQty(entry.item.id, -1.0) }) {
-                                Icon(Icons.Default.RemoveCircleOutline, contentDescription = tr("Decrease", "কমান"))
+    }
+
+    val isRequiredAddressValid = recipientName.isNotBlank() &&
+        recipientPhone.isNotBlank() &&
+        district.isNotBlank() &&
+        policeStation.isNotBlank() &&
+        address.isNotBlank()
+
+    ProvideSafeTextToolbar {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text("${strings.cart} (${state.cart.size})", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            }
+            if (state.cart.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        icon = Icons.Default.ShoppingCart,
+                        title = tr("Your Cart Is Empty", "আপনার কার্ট খালি"),
+                        subtitle = tr(
+                            "Browse farm-fresh products in the Shop tab and add items to checkout.",
+                            "বাজার ট্যাব থেকে তাজা খামার পণ্য কার্টে যোগ করে অর্ডার করুন।"
+                        )
+                    )
+                }
+            } else {
+                items(state.cart, key = { it.item.id }) { entry ->
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                        Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(entry.item.name, fontWeight = FontWeight.Bold)
+                                Text("${CurrencyFormatter.format(entry.item.sellingPrice, currency)} / ${entry.item.unit}", style = MaterialTheme.typography.labelSmall)
                             }
-                            Text("${entry.quantity.toInt()}", fontWeight = FontWeight.Bold)
-                            IconButton(onClick = { onUpdateQty(entry.item.id, 1.0) }) {
-                                Icon(Icons.Default.AddCircleOutline, contentDescription = tr("Increase", "বাড়ান"))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onUpdateQty(entry.item.id, -1.0) }) {
+                                    Icon(Icons.Default.RemoveCircleOutline, contentDescription = tr("Decrease", "কমান"))
+                                }
+                                Text("${entry.quantity.toInt()}", fontWeight = FontWeight.Bold)
+                                IconButton(onClick = { onUpdateQty(entry.item.id, 1.0) }) {
+                                    Icon(Icons.Default.AddCircleOutline, contentDescription = tr("Increase", "বাড়ান"))
+                                }
                             }
                         }
                     }
                 }
-            }
-            item {
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(strings.checkout, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        OutlinedTextField(
-                            value = address,
-                            onValueChange = { address = it },
-                            label = { Text(tr("Delivery Address *", "ডেলিভারির ঠিকানা *")) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(tr("Payment Method", "পেমেন্ট পদ্ধতি"), style = MaterialTheme.typography.labelLarge)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(listOf("Cash on Delivery") + currency.gateways) { gw ->
-                                FilterChip(
-                                    selected = paymentMethod == gw,
-                                    onClick = { paymentMethod = gw },
-                                    label = { Text(DomainLocalization.paymentMethod(gw, isBn)) }
+
+                if (sellerReceivingAccounts.isNotEmpty()) {
+                    item(key = "seller_payment_accounts") {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                            modifier = Modifier.fillMaxWidth().testTag("seller_payment_accounts_card")
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        tr("Pay Seller Directly (bKash / Nagad / Bank)", "সরাসরি বিক্রেতার অ্যাকাউন্টে পেমেন্ট করুন"),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                sellerReceivingAccounts.forEach { acc ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(acc.farmName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        if (acc.bkash.isNotBlank()) {
+                                            val bkashCopiedMsg = tr("bKash number copied: ${acc.bkash}", "বিকাশ নম্বর কপি হয়েছে: ${acc.bkash}")
+                                            CopyablePaymentRow(
+                                                label = "bKash",
+                                                value = acc.bkash,
+                                                onCopy = {
+                                                    clipboardManager.setText(AnnotatedString(acc.bkash))
+                                                    onMessage(bkashCopiedMsg)
+                                                }
+                                            )
+                                        }
+                                        if (acc.nagad.isNotBlank()) {
+                                            val nagadCopiedMsg = tr("Nagad number copied: ${acc.nagad}", "নগদ নম্বর কপি হয়েছে: ${acc.nagad}")
+                                            CopyablePaymentRow(
+                                                label = "Nagad",
+                                                value = acc.nagad,
+                                                onCopy = {
+                                                    clipboardManager.setText(AnnotatedString(acc.nagad))
+                                                    onMessage(nagadCopiedMsg)
+                                                }
+                                            )
+                                        }
+                                        if (acc.bank.isNotBlank()) {
+                                            val bankCopiedMsg = tr("Bank account copied", "ব্যাংক তথ্য কপি হয়েছে")
+                                            CopyablePaymentRow(
+                                                label = tr("Bank", "ব্যাংক"),
+                                                value = acc.bank,
+                                                onCopy = {
+                                                    clipboardManager.setText(AnnotatedString(acc.bank))
+                                                    onMessage(bankCopiedMsg)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(strings.checkout, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                tr(
+                                    "All fields marked * are required so delivery reaches your correct District & Police Station.",
+                                    "* চিহ্নিত তথ্যগুলো আবশ্যক যাতে আপনার জেলা ও থানায় সঠিকভাবে ডেলিভারি পৌঁছে।"
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = recipientName,
+                                onValueChange = { recipientName = it },
+                                label = { Text(tr("Recipient Full Name *", "প্রাপকের পূর্ণ নাম *")) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("checkout_name_input")
+                            )
+                            OutlinedTextField(
+                                value = recipientPhone,
+                                onValueChange = { recipientPhone = it },
+                                label = { Text(tr("Mobile Number *", "মোবাইল নম্বর *")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("checkout_phone_input")
+                            )
+                            Text(tr("Quick District Select", "দ্রুত জেলা নির্বাচন"), style = MaterialTheme.typography.labelMedium)
+                            val popularDistricts = listOf("Dhaka", "Chattogram", "Bogura", "Rajshahi", "Sylhet", "Khulna", "Cumilla", "Mymensingh")
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                popularDistricts.forEach { d ->
+                                    FilterChip(
+                                        selected = district.equals(d, ignoreCase = true),
+                                        onClick = { district = d },
+                                        label = { Text(d) }
+                                    )
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = district,
+                                    onValueChange = { district = it },
+                                    label = { Text(tr("District (জেলা) *", "জেলা *")) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f).testTag("checkout_district_input")
+                                )
+                                OutlinedTextField(
+                                    value = policeStation,
+                                    onValueChange = { policeStation = it },
+                                    label = { Text(tr("Police Station / Thana *", "থানা / পুলিশ স্টেশন *")) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f).testTag("checkout_police_station_input")
                                 )
                             }
-                        }
-                        HorizontalDivider()
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(tr("Order Total", "মোট মূল্য"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(CurrencyFormatter.format(total, currency), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Button(
-                            enabled = address.isNotBlank(),
-                            onClick = { onCheckout(address, paymentMethod) },
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(strings.placeOrder, fontWeight = FontWeight.Bold)
+                            OutlinedTextField(
+                                value = address,
+                                onValueChange = { address = it },
+                                label = { Text(tr("Full Street / House / Village Address *", "বাড়ি, রোড, গ্রাম / পূর্ণ ঠিকানা *")) },
+                                modifier = Modifier.fillMaxWidth().testTag("checkout_address_input")
+                            )
+                            OutlinedTextField(
+                                value = landmark,
+                                onValueChange = { landmark = it },
+                                label = { Text(tr("Post Office / Nearby Landmark / Area Note (optional)", "ডাকঘর / নিকটস্থ পরিচিত স্থান (ঐচ্ছিক)")) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("checkout_landmark_input")
+                            )
+
+                            Text(tr("Payment Method", "পেমেন্ট পদ্ধতি"), style = MaterialTheme.typography.labelLarge)
+                            if (systemSettings.orderCustomNote.isNotBlank()) {
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                    modifier = Modifier.fillMaxWidth().testTag("checkout_admin_order_note")
+                                ) {
+                                    Text(
+                                        systemSettings.orderCustomNote,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                            }
+                            if (availablePaymentMethods.isEmpty()) {
+                                Text(
+                                    tr(
+                                        "Payment methods are currently turned off by Super Admin. Please check back later.",
+                                        "সুপার অ্যাডমিন বর্তমানে সব পেমেন্ট অপশন বন্ধ রেখেছেন।"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.testTag("checkout_no_payment_methods_warning")
+                                )
+                            } else {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    availablePaymentMethods.forEach { gw ->
+                                        val gwTag = "checkout_gw_" + gw.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+                                        FilterChip(
+                                            selected = paymentMethod == gw,
+                                            onClick = { paymentMethod = gw },
+                                            label = { Text(DomainLocalization.paymentMethod(gw, isBn)) },
+                                            modifier = Modifier.testTag(gwTag)
+                                        )
+                                    }
+                                }
+                            }
+                            if (systemSettings.orderShowBkash || systemSettings.orderShowNagad || systemSettings.orderShowBank) {
+                                OutlinedTextField(
+                                    value = paymentReference,
+                                    onValueChange = { paymentReference = it },
+                                    label = { Text(tr("Payment TrxID or Sender Reference (optional)", "পেমেন্ট TrxID বা রেফারেন্স (ঐচ্ছিক)")) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().testTag("checkout_payment_ref_input")
+                                )
+                            }
+                            if (!isRequiredAddressValid) {
+                                Text(
+                                    tr(
+                                        "Please fill Name, Mobile, District, Police Station/Thana, and Full Address to place your order.",
+                                        "অর্ডার করতে নাম, মোবাইল, জেলা, থানা/পুলিশ স্টেশন এবং পূর্ণ ঠিকানা দিন।"
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            HorizontalDivider()
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(tr("Order Total", "মোট মূল্য"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(CurrencyFormatter.format(total, currency), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Button(
+                                enabled = isRequiredAddressValid && availablePaymentMethods.isNotEmpty(),
+                                onClick = {
+                                    textToolbar.hide()
+                                    focusManager.clearFocus(force = true)
+                                    onCheckout(
+                                        recipientName.trim(),
+                                        recipientPhone.trim(),
+                                        district.trim(),
+                                        policeStation.trim(),
+                                        address.trim(),
+                                        landmark.trim(),
+                                        paymentMethod,
+                                        paymentReference.trim()
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("place_order_button")
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(strings.placeOrder, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CopyablePaymentRow(
+    label: String,
+    value: String,
+    onCopy: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "$label: $value",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onCopy) {
+            Icon(Icons.Default.ContentCopy, contentDescription = tr("Copy", "কপি"), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(tr("Copy", "কপি"), style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -783,6 +1113,9 @@ private fun CustomerOrdersTab(
                     OrderStatus.DELIVERED -> 1f
                     OrderStatus.CANCELLED -> 0f
                 }
+                val locationLine = listOf(order.deliveryPoliceStation, order.deliveryDistrict)
+                    .filter { it.isNotBlank() }
+                    .joinToString(", ")
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -790,9 +1123,25 @@ private fun CustomerOrdersTab(
                             AssistChip(onClick = {}, label = { Text(DomainLocalization.orderStatus(status, isBn), fontWeight = FontWeight.Bold) })
                         }
                         Text(order.itemsSummary, style = MaterialTheme.typography.bodyMedium)
-                        Text("${tr("Address", "ঠিকানা")}: ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            "${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)}) • ${formatShortDate(order.createdAt)}",
+                            "${tr("Recipient", "প্রাপক")}: ${order.customerName} (${order.customerPhone})",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (locationLine.isNotBlank()) {
+                            Text(
+                                "${tr("Police Station & District", "থানা ও জেলা")}: $locationLine",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Text(
+                            "${tr("Address", "ঠিকানা")}: ${order.deliveryAddress}${if (order.deliveryLandmark.isNotBlank()) " • ${order.deliveryLandmark}" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)})${if (order.paymentReference.isNotBlank()) " • Ref: ${order.paymentReference}" else ""} • ${formatShortDate(order.createdAt)}",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary
                         )

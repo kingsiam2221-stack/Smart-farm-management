@@ -1,6 +1,7 @@
 package com.example
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +77,7 @@ class MainActivityUiCrashTest {
             "mobile_online_products_chip",
             "mobile_ai_ad_studio_chip",
             "mobile_livestock_chip",
+            "mobile_staff_hr_chip",
             "mobile_guide_chip",
             "mobile_permissions_chip"
         ).forEach { chipTag ->
@@ -82,6 +85,22 @@ class MainActivityUiCrashTest {
             composeRule.onNodeWithTag(chipTag).performClick()
             composeRule.waitForIdle()
         }
+
+        // Verify Staff HR, Targets (+10/+20 reward) & Auto-Message screen renders & opens dialogs cleanly
+        composeRule.onNodeWithTag("farmer_overflow_chips_row").performScrollToNode(hasTestTag("mobile_staff_hr_chip"))
+        composeRule.onNodeWithTag("mobile_staff_hr_chip").performClick()
+        waitForTag("assign_target_fab")
+        composeRule.onNodeWithTag("assign_target_fab").performClick()
+        waitForTag("target_title_input")
+        composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.onNodeWithTag("staff_hr_tab_payroll").performClick()
+        waitForTag("record_staff_pay_fab")
+        composeRule.onNodeWithTag("staff_hr_tab_messages").performClick()
+        waitForTag("send_auto_msg_fab")
+        composeRule.onNodeWithTag("send_auto_msg_fab").performClick()
+        waitForTag("auto_msg_body_input")
+        composeRule.onNodeWithText("Cancel").performClick()
+
 
         // Open Settings via primary bottom navigation bar
         composeRule.onNodeWithTag("nav_settings").performClick()
@@ -121,18 +140,52 @@ class MainActivityUiCrashTest {
         composeRule.onNodeWithText("Finance").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("System").performClick()
-        composeRule.waitForIdle()
+        waitForTag("admin_system_lazy_column")
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_toggle_customer_demo"))
+        composeRule.onNodeWithTag("admin_toggle_customer_demo").performClick()
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_login_banner_title_input"))
+        composeRule.onNodeWithTag("admin_login_banner_title_input").performTextInput("Custom Agro Portal")
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_save_login_screen_button"))
+        composeRule.onNodeWithTag("admin_save_login_screen_button").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasText("System & payment settings saved."), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Edit Order Options (turn off bKash & Bank, save custom order note)
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_toggle_order_bkash"))
+        composeRule.onNodeWithTag("admin_toggle_order_bkash").performClick()
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_toggle_order_bank"))
+        composeRule.onNodeWithTag("admin_toggle_order_bank").performClick()
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_order_note_input"))
+        composeRule.onNodeWithTag("admin_order_note_input").performTextInput("Pay via Nagad or COD")
+        composeRule.onNodeWithTag("admin_system_lazy_column").performScrollToNode(hasTestTag("admin_save_order_options_button"))
+        composeRule.onNodeWithTag("admin_save_order_options_button").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasText("System & payment settings saved."), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
         composeRule.onNodeWithTag("admin_settings_button").performClick()
         waitForTag("settings_profile_card")
         scrollSettingsTo("settings_admin_security_card")
         composeRule.onNodeWithTag("settings_change_admin_password_button").performClick()
         composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.waitUntil(timeoutMillis = 7_000L) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasText("System & payment settings saved."), useUnmergedTree = true)
+                .fetchSemanticsNodes().isEmpty()
+        }
         scrollSettingsTo("logout_button")
         composeRule.onNodeWithTag("logout_button").performClick()
         waitForTag("logout_confirm_button")
         composeRule.onNodeWithTag("logout_confirm_button").performClick()
         waitForTag("auth_quick_language_toggle")
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            composeRule.onAllNodes(androidx.compose.ui.test.hasText("Custom Agro Portal"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("auth_banner_title").assertTextEquals("Custom Agro Portal")
+        assertTrue(composeRule.onAllNodesWithTag("demo_customer_button", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
     }
 }
 

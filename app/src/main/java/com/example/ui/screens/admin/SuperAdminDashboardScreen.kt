@@ -947,21 +947,23 @@ private fun AdminPlansTab(
             onDismissRequest = { showCreate = false; editingPlan = null },
             title = { Text(if (init == null) tr("Create Subscription Plan", "নতুন সাবস্ক্রিপশন প্ল্যান") else tr("Edit Subscription Plan", "সাবস্ক্রিপশন প্ল্যান সম্পাদনা")) },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Plan Name *", "প্ল্যানের নাম *")) }, singleLine = true)
-                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text(tr("Base Price (BDT ৳) *", "মূল মূল্য (টাকা ৳) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = daysText, onValueChange = { daysText = it }, label = { Text(tr("Duration (days) *", "মেয়াদ (দিন) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Description", "বিবরণ")) })
-                    OutlinedTextField(value = features, onValueChange = { features = it }, label = { Text(tr("Features", "সুবিধাসমূহ")) })
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = active, onCheckedChange = { active = it })
-                        Text(tr("Active & Visible to Farmers", "সক্রিয় ও খামারিদের জন্য দৃশ্যমান"))
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Plan Name *", "প্ল্যানের নাম *")) }, singleLine = true)
+                        OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text(tr("Base Price (BDT ৳) *", "মূল মূল্য (টাকা ৳) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                        OutlinedTextField(value = daysText, onValueChange = { daysText = it }, label = { Text(tr("Duration (days) *", "মেয়াদ (দিন) *")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Description", "বিবরণ")) })
+                        OutlinedTextField(value = features, onValueChange = { features = it }, label = { Text(tr("Features", "সুবিধাসমূহ")) })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = active, onCheckedChange = { active = it })
+                            Text(tr("Active & Visible to Farmers", "সক্রিয় ও খামারিদের জন্য দৃশ্যমান"))
+                        }
                     }
                 }
             },
@@ -1265,11 +1267,573 @@ private fun AdminSystemTab(
     var bMsg by remember { mutableStateOf("") }
     var replyTarget by remember { mutableStateOf<SupportRequestEntity?>(null) }
 
+    var showCustomerLogin by remember(settings.loginShowCustomerLogin) { mutableStateOf(settings.loginShowCustomerLogin) }
+    var showCustomerDemo by remember(settings.loginShowCustomerDemo) { mutableStateOf(settings.loginShowCustomerDemo) }
+    var showCustomerSignup by remember(settings.loginShowCustomerSignup) { mutableStateOf(settings.loginShowCustomerSignup) }
+    var showFarmerLogin by remember(settings.loginShowFarmerLogin) { mutableStateOf(settings.loginShowFarmerLogin) }
+    var showFarmerDemo by remember(settings.loginShowFarmerDemo) { mutableStateOf(settings.loginShowFarmerDemo) }
+    var showFarmerSignup by remember(settings.loginShowFarmerSignup) { mutableStateOf(settings.loginShowFarmerSignup) }
+    var showEmployeeLogin by remember(settings.loginShowEmployeeLogin) { mutableStateOf(settings.loginShowEmployeeLogin) }
+    var showEmployeeDemo by remember(settings.loginShowEmployeeDemo) { mutableStateOf(settings.loginShowEmployeeDemo) }
+    var showGoogleSignIn by remember(settings.loginShowGoogleSignIn) { mutableStateOf(settings.loginShowGoogleSignIn) }
+    var showForgotPassword by remember(settings.loginShowForgotPassword) { mutableStateOf(settings.loginShowForgotPassword) }
+
+    var loginBannerTitle by remember(settings.loginBannerTitle) { mutableStateOf(settings.loginBannerTitle) }
+    var loginBannerSubtitle by remember(settings.loginBannerSubtitle) { mutableStateOf(settings.loginBannerSubtitle) }
+    var loginCustomNotice by remember(settings.loginCustomNotice) { mutableStateOf(settings.loginCustomNotice) }
+    var loginCustomerTitle by remember(settings.loginCustomerTitle) { mutableStateOf(settings.loginCustomerTitle) }
+    var loginCustomerSubtitle by remember(settings.loginCustomerSubtitle) { mutableStateOf(settings.loginCustomerSubtitle) }
+    var loginFarmerTitle by remember(settings.loginFarmerTitle) { mutableStateOf(settings.loginFarmerTitle) }
+    var loginFarmerSubtitle by remember(settings.loginFarmerSubtitle) { mutableStateOf(settings.loginFarmerSubtitle) }
+    var loginEmployeeTitle by remember(settings.loginEmployeeTitle) { mutableStateOf(settings.loginEmployeeTitle) }
+    var loginEmployeeSubtitle by remember(settings.loginEmployeeSubtitle) { mutableStateOf(settings.loginEmployeeSubtitle) }
+    var expandPortalTexts by remember { mutableStateOf(false) }
+
+    var orderShowBkash by remember(settings.orderShowBkash) { mutableStateOf(settings.orderShowBkash) }
+    var orderShowNagad by remember(settings.orderShowNagad) { mutableStateOf(settings.orderShowNagad) }
+    var orderShowBank by remember(settings.orderShowBank) { mutableStateOf(settings.orderShowBank) }
+    var orderShowCod by remember(settings.orderShowCod) { mutableStateOf(settings.orderShowCod) }
+    var orderOverrideSellerPayments by remember(settings.orderOverrideSellerPayments) { mutableStateOf(settings.orderOverrideSellerPayments) }
+    var orderBkashNumber by remember(settings.orderBkashNumber) { mutableStateOf(settings.orderBkashNumber) }
+    var orderNagadNumber by remember(settings.orderNagadNumber) { mutableStateOf(settings.orderNagadNumber) }
+    var orderBankAccount by remember(settings.orderBankAccount) { mutableStateOf(settings.orderBankAccount) }
+    var orderCustomNote by remember(settings.orderCustomNote) { mutableStateOf(settings.orderCustomNote) }
+
+    fun saveLoginCustomization(
+        custDemo: Boolean = showCustomerDemo,
+        farmDemo: Boolean = showFarmerDemo,
+        empDemo: Boolean = showEmployeeDemo
+    ) {
+        onSaveSettings(
+            settings.copy(
+                loginShowCustomerLogin = showCustomerLogin,
+                loginShowCustomerDemo = custDemo,
+                loginShowCustomerSignup = showCustomerSignup,
+                loginShowFarmerLogin = showFarmerLogin,
+                loginShowFarmerDemo = farmDemo,
+                loginShowFarmerSignup = showFarmerSignup,
+                loginShowEmployeeLogin = showEmployeeLogin,
+                loginShowEmployeeDemo = empDemo,
+                loginShowGoogleSignIn = showGoogleSignIn,
+                loginShowForgotPassword = showForgotPassword,
+                loginBannerTitle = loginBannerTitle.trim(),
+                loginBannerSubtitle = loginBannerSubtitle.trim(),
+                loginCustomerTitle = loginCustomerTitle.trim(),
+                loginCustomerSubtitle = loginCustomerSubtitle.trim(),
+                loginFarmerTitle = loginFarmerTitle.trim(),
+                loginFarmerSubtitle = loginFarmerSubtitle.trim(),
+                loginEmployeeTitle = loginEmployeeTitle.trim(),
+                loginEmployeeSubtitle = loginEmployeeSubtitle.trim(),
+                loginCustomNotice = loginCustomNotice.trim()
+            )
+        )
+    }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("admin_system_lazy_column"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item(key = "sys_login_screen_edit_header") {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_login_edit_card")
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text(
+                                tr("Login Screen Edit & Portal Controls", "লগইন স্ক্রিন এডিট ও পোর্টাল নিয়ন্ত্রণ"),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                tr(
+                                    "Turn Customer, Farmer, Employee, or Demo logins ON/OFF and customize login titles & notices. Super Admin login always remains accessible.",
+                                    "গ্রাহক, খামারি, কর্মচারী বা ডেমো লগইন চালু/বন্ধ করুন এবং লগইন স্ক্রিনের লেখা পরিবর্তন করুন। সুপার অ্যাডমিন প্রবেশ সবসময় চালু থাকবে।"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                showCustomerDemo = true
+                                showFarmerDemo = true
+                                showEmployeeDemo = true
+                                saveLoginCustomization(custDemo = true, farmDemo = true, empDemo = true)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("admin_all_demos_on_button")
+                        ) {
+                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(tr("All Demos ON", "সব ডেমো চালু"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                showCustomerDemo = false
+                                showFarmerDemo = false
+                                showEmployeeDemo = false
+                                saveLoginCustomization(custDemo = false, farmDemo = false, empDemo = false)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("admin_all_demos_off_button")
+                        ) {
+                            Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(tr("All Demos OFF", "সব ডেমো বন্ধ"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "sys_login_screen_toggles") {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        tr("Portals & Demo Visibility", "পোর্টাল ও ডেমো লগইন প্রদর্শন"),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    LoginControlToggleRow(
+                        label = tr("Customer Login", "গ্রাহক লগইন"),
+                        checked = showCustomerLogin,
+                        onCheckedChange = { showCustomerLogin = it },
+                        testTag = "admin_toggle_customer_login"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Customer Demo Button", "গ্রাহক ডেমো বাটন"),
+                        checked = showCustomerDemo,
+                        onCheckedChange = { showCustomerDemo = it },
+                        testTag = "admin_toggle_customer_demo"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Customer Sign-Up (Create Account)", "নতুন গ্রাহক অ্যাকাউন্ট তৈরি"),
+                        checked = showCustomerSignup,
+                        onCheckedChange = { showCustomerSignup = it },
+                        testTag = "admin_toggle_customer_signup"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Farmer / Farm Business Login", "খামারি / ব্যবসা লগইন"),
+                        checked = showFarmerLogin,
+                        onCheckedChange = { showFarmerLogin = it },
+                        testTag = "admin_toggle_farmer_login"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Farmer Demo Button", "খামারি ডেমো বাটন"),
+                        checked = showFarmerDemo,
+                        onCheckedChange = { showFarmerDemo = it },
+                        testTag = "admin_toggle_farmer_demo"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Make Farm Business Sign-Up", "খামার ব্যবসা অ্যাকাউন্ট তৈরি"),
+                        checked = showFarmerSignup,
+                        onCheckedChange = { showFarmerSignup = it },
+                        testTag = "admin_toggle_farmer_signup"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Employee Login", "কর্মচারী লগইন"),
+                        checked = showEmployeeLogin,
+                        onCheckedChange = { showEmployeeLogin = it },
+                        testTag = "admin_toggle_employee_login"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Employee Demo Button", "কর্মচারী ডেমো বাটন"),
+                        checked = showEmployeeDemo,
+                        onCheckedChange = { showEmployeeDemo = it },
+                        testTag = "admin_toggle_employee_demo"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Google Sign-In Option", "গুগল সাইন-ইন অপশন"),
+                        checked = showGoogleSignIn,
+                        onCheckedChange = { showGoogleSignIn = it },
+                        testTag = "admin_toggle_google_signin"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Forgot / Reset Password", "পাসওয়ার্ড রিসেট অপশন"),
+                        checked = showForgotPassword,
+                        onCheckedChange = { showForgotPassword = it },
+                        testTag = "admin_toggle_forgot_password"
+                    )
+                }
+            }
+        }
+
+        item(key = "sys_login_screen_texts") {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        tr("Edit Login Text & Notice (Blank = Default)", "লগইন লেখা ও নোটিশ এডিট (খালি থাকলে ডিফল্ট)"),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedTextField(
+                        value = loginBannerTitle,
+                        onValueChange = { loginBannerTitle = it },
+                        label = { Text(tr("Login Hero Title", "লগইন হিরো শিরোনাম")) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_login_banner_title_input")
+                    )
+                    OutlinedTextField(
+                        value = loginBannerSubtitle,
+                        onValueChange = { loginBannerSubtitle = it },
+                        label = { Text(tr("Login Hero Subtitle", "লগইন হিরো উপশিরোনাম")) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_login_banner_subtitle_input")
+                    )
+                    OutlinedTextField(
+                        value = loginCustomNotice,
+                        onValueChange = { loginCustomNotice = it },
+                        label = { Text(tr("Custom Notice Banner on Login Screen", "লগইন স্ক্রিনে কাস্টম নোটিশ বার্তা")) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_login_notice_input")
+                    )
+
+                    TextButton(
+                        onClick = { expandPortalTexts = !expandPortalTexts },
+                        modifier = Modifier.testTag("admin_expand_portal_texts_button")
+                    ) {
+                        Icon(
+                            if (expandPortalTexts) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (expandPortalTexts) tr("Hide Portal Card Titles", "পোর্টাল কার্ডের লেখা লুকান")
+                            else tr("Edit Customer / Farmer / Employee Card Titles", "গ্রাহক / খামারি / কর্মচারী কার্ডের লেখা এডিট করুন")
+                        )
+                    }
+
+                    if (expandPortalTexts) {
+                        OutlinedTextField(
+                            value = loginCustomerTitle,
+                            onValueChange = { loginCustomerTitle = it },
+                            label = { Text(tr("Customer Login Card Title", "গ্রাহক লগইন শিরোনাম")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_customer_title_input")
+                        )
+                        OutlinedTextField(
+                            value = loginCustomerSubtitle,
+                            onValueChange = { loginCustomerSubtitle = it },
+                            label = { Text(tr("Customer Login Card Subtitle", "গ্রাহক লগইন বিবরণ")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = loginFarmerTitle,
+                            onValueChange = { loginFarmerTitle = it },
+                            label = { Text(tr("Farmer Login Card Title", "খামারি লগইন শিরোনাম")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_farmer_title_input")
+                        )
+                        OutlinedTextField(
+                            value = loginFarmerSubtitle,
+                            onValueChange = { loginFarmerSubtitle = it },
+                            label = { Text(tr("Farmer Login Card Subtitle", "খামারি লগইন বিবরণ")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = loginEmployeeTitle,
+                            onValueChange = { loginEmployeeTitle = it },
+                            label = { Text(tr("Employee Login Card Title", "কর্মচারী লগইন শিরোনাম")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_employee_title_input")
+                        )
+                        OutlinedTextField(
+                            value = loginEmployeeSubtitle,
+                            onValueChange = { loginEmployeeSubtitle = it },
+                            label = { Text(tr("Employee Login Card Subtitle", "কর্মচারী লগইন বিবরণ")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "sys_login_screen_actions") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        showCustomerLogin = true
+                        showCustomerDemo = true
+                        showCustomerSignup = true
+                        showFarmerLogin = true
+                        showFarmerDemo = true
+                        showFarmerSignup = true
+                        showEmployeeLogin = true
+                        showEmployeeDemo = true
+                        showGoogleSignIn = true
+                        showForgotPassword = true
+                        loginBannerTitle = ""
+                        loginBannerSubtitle = ""
+                        loginCustomerTitle = ""
+                        loginCustomerSubtitle = ""
+                        loginFarmerTitle = ""
+                        loginFarmerSubtitle = ""
+                        loginEmployeeTitle = ""
+                        loginEmployeeSubtitle = ""
+                        loginCustomNotice = ""
+                        onSaveSettings(
+                            settings.copy(
+                                loginShowCustomerLogin = true,
+                                loginShowCustomerDemo = true,
+                                loginShowCustomerSignup = true,
+                                loginShowFarmerLogin = true,
+                                loginShowFarmerDemo = true,
+                                loginShowFarmerSignup = true,
+                                loginShowEmployeeLogin = true,
+                                loginShowEmployeeDemo = true,
+                                loginShowGoogleSignIn = true,
+                                loginShowForgotPassword = true,
+                                loginBannerTitle = "",
+                                loginBannerSubtitle = "",
+                                loginCustomerTitle = "",
+                                loginCustomerSubtitle = "",
+                                loginFarmerTitle = "",
+                                loginFarmerSubtitle = "",
+                                loginEmployeeTitle = "",
+                                loginEmployeeSubtitle = "",
+                                loginCustomNotice = ""
+                            )
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("admin_reset_login_screen_button")
+                ) {
+                    Text(tr("Reset Defaults", "ডিফল্ট রিসেট"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Button(
+                    onClick = { saveLoginCustomization() },
+                    modifier = Modifier
+                        .weight(1.4f)
+                        .heightIn(min = 48.dp)
+                        .testTag("admin_save_login_screen_button")
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(tr("Save Login Screen", "লগইন সেটিংস সেভ"), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        item(key = "sys_order_option_edit_toggles") {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_order_edit_card")
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.ShoppingBag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column {
+                            Text(
+                                tr("Order Option Edit (bKash / Nagad / Bank)", "অর্ডার অপশন এডিট (বিকাশ / নগদ / ব্যাংক)"),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                tr(
+                                    "Control which payment numbers & gateways appear in Customer Checkout and Seller product forms. Turn any option OFF anytime.",
+                                    "ক্রেতার চেকআউট ও বিক্রেতার পণ্যের ফর্মে কোন পেমেন্ট নম্বর ও মাধ্যম থাকবে তা চালু বা বন্ধ করুন।"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    LoginControlToggleRow(
+                        label = tr("Keep bKash Number & Payment Option", "বিকাশ নম্বর ও পেমেন্ট চালু রাখুন"),
+                        checked = orderShowBkash,
+                        onCheckedChange = { orderShowBkash = it },
+                        testTag = "admin_toggle_order_bkash"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Keep Nagad Number & Payment Option", "নগদ নম্বর ও পেমেন্ট চালু রাখুন"),
+                        checked = orderShowNagad,
+                        onCheckedChange = { orderShowNagad = it },
+                        testTag = "admin_toggle_order_nagad"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Keep Bank Account Number & Transfer", "ব্যাংক অ্যাকাউন্ট নম্বর ও ট্রান্সফার চালু রাখুন"),
+                        checked = orderShowBank,
+                        onCheckedChange = { orderShowBank = it },
+                        testTag = "admin_toggle_order_bank"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Keep Cash on Delivery Option", "ক্যাশ অন ডেলিভারি চালু রাখুন"),
+                        checked = orderShowCod,
+                        onCheckedChange = { orderShowCod = it },
+                        testTag = "admin_toggle_order_cod"
+                    )
+                    LoginControlToggleRow(
+                        label = tr("Override Seller Numbers with Admin Numbers", "বিক্রেতার নম্বরের বদলে অ্যাডমিন নম্বর দেখান"),
+                        checked = orderOverrideSellerPayments,
+                        onCheckedChange = { orderOverrideSellerPayments = it },
+                        testTag = "admin_toggle_order_override_seller"
+                    )
+                }
+            }
+        }
+
+        item(key = "sys_order_option_edit_inputs") {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        tr("Central / Fallback Order Numbers & Checkout Note", "অ্যাডমিন অর্ডার নম্বর ও চেকআউট নোট"),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (orderShowBkash) {
+                        OutlinedTextField(
+                            value = orderBkashNumber,
+                            onValueChange = { orderBkashNumber = it },
+                            label = { Text(tr("Order bKash Number (Admin / Fallback)", "অর্ডার বিকাশ নম্বর (অ্যাডমিন / ফলব্যাক)")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_order_bkash_input")
+                        )
+                    }
+                    if (orderShowNagad) {
+                        OutlinedTextField(
+                            value = orderNagadNumber,
+                            onValueChange = { orderNagadNumber = it },
+                            label = { Text(tr("Order Nagad Number (Admin / Fallback)", "অর্ডার নগদ নম্বর (অ্যাডমিন / ফলব্যাক)")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_order_nagad_input")
+                        )
+                    }
+                    if (orderShowBank) {
+                        OutlinedTextField(
+                            value = orderBankAccount,
+                            onValueChange = { orderBankAccount = it },
+                            label = { Text(tr("Order Bank Account Details (Admin / Fallback)", "অর্ডার ব্যাংক অ্যাকাউন্ট তথ্য (অ্যাডমিন / ফলব্যাক)")) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("admin_order_bank_input")
+                        )
+                    }
+                    OutlinedTextField(
+                        value = orderCustomNote,
+                        onValueChange = { orderCustomNote = it },
+                        label = { Text(tr("Custom Order Checkout Note (Optional)", "কাস্টম অর্ডার চেকআউট নোট (ঐচ্ছিক)")) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_order_note_input")
+                    )
+                }
+            }
+        }
+
+        item(key = "sys_order_option_actions") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        orderShowBkash = true
+                        orderShowNagad = true
+                        orderShowBank = true
+                        orderShowCod = true
+                        orderOverrideSellerPayments = false
+                        orderBkashNumber = ""
+                        orderNagadNumber = ""
+                        orderBankAccount = ""
+                        orderCustomNote = ""
+                        onSaveSettings(
+                            settings.copy(
+                                orderShowBkash = true,
+                                orderShowNagad = true,
+                                orderShowBank = true,
+                                orderShowCod = true,
+                                orderOverrideSellerPayments = false,
+                                orderBkashNumber = "",
+                                orderNagadNumber = "",
+                                orderBankAccount = "",
+                                orderCustomNote = ""
+                            )
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("admin_reset_order_options_button")
+                ) {
+                    Text(tr("Reset Order Options", "অর্ডার রিসেট"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Button(
+                    onClick = {
+                        onSaveSettings(
+                            settings.copy(
+                                orderShowBkash = orderShowBkash,
+                                orderShowNagad = orderShowNagad,
+                                orderShowBank = orderShowBank,
+                                orderShowCod = orderShowCod,
+                                orderOverrideSellerPayments = orderOverrideSellerPayments,
+                                orderBkashNumber = orderBkashNumber.trim(),
+                                orderNagadNumber = orderNagadNumber.trim(),
+                                orderBankAccount = orderBankAccount.trim(),
+                                orderCustomNote = orderCustomNote.trim()
+                            )
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1.4f)
+                        .heightIn(min = 48.dp)
+                        .testTag("admin_save_order_options_button")
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(tr("Save Order Options", "অর্ডার অপশন সেভ"), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
         item(key = "sys_settings") {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1497,7 +2061,11 @@ private fun AdminSystemTab(
         AlertDialog(
             onDismissRequest = { replyTarget = null },
             title = { Text("${tr("Resolve Ticket", "টিকিট সমাধান")}: ${req.subject}") },
-            text = { OutlinedTextField(value = reply, onValueChange = { reply = it }, label = { Text(tr("Admin Reply", "অ্যাডমিন উত্তর")) }) },
+            text = {
+                ProvideSafeTextToolbar {
+                    OutlinedTextField(value = reply, onValueChange = { reply = it }, label = { Text(tr("Admin Reply", "অ্যাডমিন উত্তর")) })
+                }
+            },
             confirmButton = {
                 Button(onClick = {
                     onResolveSupport(req, reply)
@@ -1505,6 +2073,33 @@ private fun AdminSystemTab(
                 }) { Text(tr("Send & Resolve", "পাঠান ও সমাধান")) }
             },
             dismissButton = { TextButton(onClick = { replyTarget = null }) { Text(tr("Cancel", "বাতিল")) } }
+        )
+    }
+}
+
+@Composable
+private fun LoginControlToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    testTag: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f).padding(end = 8.dp)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.testTag(testTag)
         )
     }
 }

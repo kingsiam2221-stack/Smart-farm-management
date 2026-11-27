@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Smart Farm Management"
+rootProject.name = "Smart Buy and Sell"
 
 include(":app")

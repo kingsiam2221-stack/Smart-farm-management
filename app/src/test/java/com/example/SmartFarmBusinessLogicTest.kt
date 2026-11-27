@@ -623,7 +623,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -816,7 +819,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -1072,7 +1078,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -1461,7 +1470,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -1613,7 +1625,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -1748,7 +1763,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .allowMainThreadQueries()
             .build()
@@ -1823,7 +1841,10 @@ class SmartFarmBusinessLogicTest {
                 SmartFarmDatabase.MIGRATION_4_5,
                 SmartFarmDatabase.MIGRATION_5_6,
                 SmartFarmDatabase.MIGRATION_6_7,
-                SmartFarmDatabase.MIGRATION_7_8
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
             )
             .fallbackToDestructiveMigration(true)
             .fallbackToDestructiveMigrationOnDowngrade(true)
@@ -2018,5 +2039,575 @@ class SmartFarmBusinessLogicTest {
         assertTrue(repo.observeFarms(farmer.id).first().isEmpty())
         assertTrue(repo.observeAllInventoryAdmin().first().none { it.ownerUserId == farmer.id })
         assertTrue(repo.observeAllAdsAdmin().first().none { it.ownerUserId == farmer.id })
+    }
+
+    @Test
+    fun roomMigration_v8ToV9_preservesDataAndAddsReceivingAccountsStructuredOrdersAndStaffHrTables() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v8_v9_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(8) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        SmartFarmDatabase.MIGRATION_5_6.migrate(db)
+                        SmartFarmDatabase.MIGRATION_6_7.migrate(db)
+                        SmartFarmDatabase.MIGRATION_7_8.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (10, 'Legacy Farmer', '01755001122', 'legacyv8@smartfarm.app', '${PasswordHasher.hash("pass123")}', 'FARMER', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val farmer = migratedRepo.login("legacyv8@smartfarm.app", "pass123").getOrThrow()
+            assertEquals("Legacy Farmer", farmer.name)
+            assertTrue(migratedRepo.observeTaskTargets(farmer.id).first().isEmpty())
+            assertTrue(migratedRepo.observeAutoMessages(farmer.id).first().isEmpty())
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun farmerPaymentAccounts_andRequiredDistrictPoliceStationCheckout_workEndToEnd() = runTest {
+        repo.initializeDatabase()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val customer = repo.login("customer@smartfarm.app", "customer123").getOrThrow()
+
+        val farmId = repo.saveFarm(
+            FarmEntity(
+                ownerUserId = farmer.id,
+                farmCode = "FM-99",
+                name = "Padma Dairy & Agro",
+                location = "Rajshahi",
+                address = "Charghat, Rajshahi",
+                category = "MIXED",
+                bkashNumber = "01711223344",
+                nagadNumber = "01811223344",
+                bankAccountInfo = "Islami Bank • A/C 205012345"
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val itemId = repo.saveInventoryItem(
+            InventoryItemEntity(
+                farmId = farmId,
+                ownerUserId = farmer.id,
+                name = "Fresh Desi Ghee",
+                category = "Milk",
+                sourcingType = ProductSourcingType.FARM_PRODUCED.key,
+                quantity = 25.0,
+                unit = "kg",
+                unitCost = 850.0,
+                sellingPrice = 1200.0,
+                listInMarketplace = true,
+                sellerBkashNumber = "01711223344",
+                sellerNagadNumber = "01811223344",
+                sellerBankAccount = "Islami Bank • A/C 205012345"
+            ),
+            actorUserId = farmer.id
+        )
+        val listedItem = db.inventoryDao().getItemById(itemId)!!
+        assertEquals("01711223344", listedItem.sellerBkashNumber)
+        assertEquals("01811223344", listedItem.sellerNagadNumber)
+        assertEquals("Islami Bank • A/C 205012345", listedItem.sellerBankAccount)
+
+        val farmsMap = repo.observeFarms(farmer.id).first().associateBy { it.id }
+
+        // Missing District and Police Station must fail when requireStructuredFields = true
+        val missingDistrict = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 12, Road 4",
+            paymentMethod = "bKash",
+            cartItems = listOf(listedItem to 2.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "",
+            deliveryPoliceStation = "Charghat",
+            requireStructuredFields = true
+        )
+        assertTrue(missingDistrict.isFailure)
+
+        val missingPs = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 12, Road 4",
+            paymentMethod = "Nagad",
+            cartItems = listOf(listedItem to 2.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "Rajshahi",
+            deliveryPoliceStation = "",
+            requireStructuredFields = true
+        )
+        assertTrue(missingPs.isFailure)
+
+        // Complete required checkout fields succeed and preserve structured address & TrxID
+        val orders = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 12, Road 4, Bazar Para",
+            paymentMethod = "bKash",
+            cartItems = listOf(listedItem to 2.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "Rajshahi",
+            deliveryPoliceStation = "Charghat",
+            deliveryLandmark = "Near Charghat Bazar",
+            customerNameOverride = "Rahim Uddin",
+            customerPhoneOverride = "01999887766",
+            paymentReference = "TRX-BK-9988",
+            requireStructuredFields = true
+        ).getOrThrow()
+
+        assertEquals(1, orders.size)
+        val placed = orders.first()
+        assertEquals("Rajshahi", placed.deliveryDistrict)
+        assertEquals("Charghat", placed.deliveryPoliceStation)
+        assertEquals("Near Charghat Bazar", placed.deliveryLandmark)
+        assertEquals("TRX-BK-9988", placed.paymentReference)
+        assertEquals("Rahim Uddin", placed.customerName)
+        assertEquals("01999887766", placed.customerPhone)
+        assertTrue(placed.deliveryAddress.contains("PS: Charghat"))
+        assertTrue(placed.deliveryAddress.contains("District: Rajshahi"))
+    }
+
+    @Test
+    fun staffHrTargetsAndAutoMessages_supportsSalaryBonusExpenseAndIdempotentTargetRewards() = runTest {
+        repo.initializeDatabase()
+        val admin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val plan = repo.observePlans().first().first()
+        repo.adminGrantSubscription(admin.id, farmer, plan).getOrThrow()
+
+        val farm = repo.observeFarms(farmer.id).first().first()
+        val empId = repo.saveEmployee(
+            EmployeeEntity(
+                farmId = farm.id,
+                ownerUserId = farmer.id,
+                name = "Sajjad Mia",
+                phone = "01744556677",
+                designation = "Feed Supervisor",
+                salary = 12000.0
+            ),
+            actorUserId = farmer.id
+        )
+        val emp = repo.observeEmployees(farmer.id).first().first { it.id == empId }
+        val provisionedEmp = repo.provisionEmployeeLogin(
+            actorId = farmer.id,
+            employee = emp,
+            email = "sajjad@smartfarm.app",
+            mobile = "01744556677",
+            password = "empPass12"
+        ).getOrThrow()
+        val empUserId = provisionedEmp.linkedUserId!!
+        repo.setEmployeePermission(farmer.id, provisionedEmp, AppPermission.STAFF_TARGETS_VIEW.key, true).getOrThrow()
+
+        // 1) Record Salary, Bonus, and Employee Expense
+        repo.recordEmployeePayment(
+            employee = provisionedEmp,
+            amount = 12000.0,
+            paymentType = EmployeePaymentType.SALARY,
+            periodOrTitle = "Nov 2026",
+            note = "Monthly salary",
+            actorUserId = farmer.id
+        ).getOrThrow()
+        repo.recordEmployeePayment(
+            employee = provisionedEmp,
+            amount = 500.0,
+            paymentType = EmployeePaymentType.BONUS,
+            periodOrTitle = "Eid Bonus",
+            note = "Performance bonus",
+            actorUserId = farmer.id
+        ).getOrThrow()
+        repo.recordEmployeePayment(
+            employee = provisionedEmp,
+            amount = 250.0,
+            paymentType = EmployeePaymentType.EXPENSE,
+            periodOrTitle = "Transport & Tea",
+            note = "Market trip",
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val paymentsAfterPayroll = repo.observeSalaryPayments(farmer.id).first().filter { it.employeeId == emp.id }
+        assertEquals(3, paymentsAfterPayroll.size)
+        assertTrue(paymentsAfterPayroll.any { it.paymentType == EmployeePaymentType.BONUS.key && it.amount == 500.0 })
+        assertTrue(paymentsAfterPayroll.any { it.paymentType == EmployeePaymentType.EXPENSE.key && it.amount == 250.0 })
+
+        // 2) Assign Morning target (+10 BDT) and Night target (+20 BDT) -> auto-messages created
+        val morningTargetId = repo.saveEmployeeTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmer.id,
+                farmId = farm.id,
+                employeeId = emp.id,
+                employeeName = emp.name,
+                timeSlot = EmployeeTaskTimeSlot.MORNING.key,
+                title = "Morning Egg Collection",
+                targetGoalText = "Collect 500 eggs & feed birds",
+                rewardBonusAmount = 10.0
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+        val nightTargetId = repo.saveEmployeeTaskTarget(
+            EmployeeTaskTargetEntity(
+                ownerUserId = farmer.id,
+                farmId = farm.id,
+                employeeId = emp.id,
+                employeeName = emp.name,
+                timeSlot = EmployeeTaskTimeSlot.NIGHT.key,
+                title = "Night Shed Lock & Water Check",
+                targetGoalText = "Lock all 3 sheds & verify water",
+                rewardBonusAmount = 20.0
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+
+        val assignedMessages = repo.observeAutoMessages(farmer.id).first().filter { it.employeeId == emp.id }
+        assertEquals(2, assignedMessages.size)
+
+        // 3) Employee completes both targets -> +10 and +20 bonuses credited ONCE (idempotent!)
+        val morningTarget = repo.observeTaskTargets(farmer.id).first().first { it.id == morningTargetId }
+        val credited1 = repo.updateEmployeeTaskTargetStatus(
+            target = morningTarget,
+            newStatus = EmployeeTaskStatus.COMPLETED,
+            completionNote = "Collected all 500 eggs on time",
+            actorUserId = empUserId
+        ).getOrThrow()
+        assertTrue(credited1)
+
+        // Completing the same target a second time must NOT double-credit the 10 BDT reward
+        val reloadedMorning = repo.observeTaskTargets(farmer.id).first().first { it.id == morningTargetId }
+        val creditedAgain = repo.updateEmployeeTaskTargetStatus(
+            target = reloadedMorning,
+            newStatus = EmployeeTaskStatus.COMPLETED,
+            completionNote = "Repeated tap",
+            actorUserId = empUserId
+        ).getOrThrow()
+        assertFalse(creditedAgain)
+
+        val nightTarget = repo.observeTaskTargets(farmer.id).first().first { it.id == nightTargetId }
+        val credited2 = repo.updateEmployeeTaskTargetStatus(
+            target = nightTarget,
+            newStatus = EmployeeTaskStatus.COMPLETED,
+            completionNote = "All sheds locked",
+            actorUserId = empUserId
+        ).getOrThrow()
+        assertTrue(credited2)
+
+        val rewardPayments = repo.observeSalaryPayments(farmer.id).first()
+            .filter { it.employeeId == emp.id && it.paymentType == EmployeePaymentType.TARGET_REWARD.key }
+        assertEquals(2, rewardPayments.size)
+        assertEquals(30.0, rewardPayments.sumOf { it.amount }, 0.01)
+
+        val matchingExpenses = repo.observeExpenses(farmer.id).first().filter { it.category == "Employee Target Reward" }
+        assertTrue(matchingExpenses.sumOf { it.amount } >= 30.0)
+
+        // 4) Employee sends an automated check-in message back to Farm Owner
+        repo.sendEmployeeAutoMessage(
+            ownerUserId = farmer.id,
+            farmId = farm.id,
+            employeeId = emp.id,
+            messageType = AutoMessageType.NIGHT_REPORT,
+            subject = "Evening Update",
+            body = "All morning & night duties completed!",
+            actorUserId = empUserId
+        ).getOrThrow()
+
+        val allMsgs = repo.observeAutoMessages(farmer.id).first().filter { it.employeeId == emp.id }
+        assertTrue(allMsgs.any { it.senderUserId == empUserId && it.subject == "Evening Update" })
+        assertTrue(allMsgs.any { it.messageType == AutoMessageType.TASK_COMPLETED.key })
+    }
+
+    @Test
+    fun roomMigration_v9ToV10_preservesSettingsAndAddsLoginScreenControls() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v9_v10_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(9) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        SmartFarmDatabase.MIGRATION_5_6.migrate(db)
+                        SmartFarmDatabase.MIGRATION_6_7.migrate(db)
+                        SmartFarmDatabase.MIGRATION_7_8.migrate(db)
+                        SmartFarmDatabase.MIGRATION_8_9.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (20, 'v9 Admin', '01700009999', 'adminv9@smartfarm.app', '${PasswordHasher.hash("admin123")}', 'SUPER_ADMIN', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                        db.execSQL("INSERT INTO system_settings (id, announcementBanner, maintenanceMode, defaultCurrencyCode, allowManualPayments) VALUES (1, 'v9 preserved banner', 0, 'BDT', 1)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val settings = migratedRepo.observeSystemSettings().first()!!
+            assertEquals("v9 preserved banner", settings.announcementBanner)
+            assertTrue(settings.loginShowCustomerLogin)
+            assertTrue(settings.loginShowCustomerDemo)
+            assertTrue(settings.loginShowFarmerLogin)
+            assertTrue(settings.loginShowFarmerDemo)
+            assertTrue(settings.loginShowEmployeeLogin)
+            assertTrue(settings.loginShowEmployeeDemo)
+            assertEquals("", settings.loginBannerTitle)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun superAdmin_editsLoginScreenTogglesAndCustomTexts_andPersists() = runTest {
+        repo.initializeDatabase()
+        val admin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val initial = repo.observeSystemSettings().first()!!
+
+        // Non-admin cannot change login screen configuration
+        val nonAdminAttempt = repo.adminUpdateSettings(
+            farmer.id,
+            initial.copy(loginShowCustomerDemo = false)
+        )
+        assertTrue(nonAdminAttempt.isFailure)
+
+        // Super Admin disables demos & customer signup, keeps farmer/employee portals, sets custom banner/notice
+        repo.adminUpdateSettings(
+            admin.id,
+            initial.copy(
+                loginShowCustomerLogin = false,
+                loginShowCustomerDemo = false,
+                loginShowCustomerSignup = false,
+                loginShowFarmerLogin = true,
+                loginShowFarmerDemo = false,
+                loginShowFarmerSignup = true,
+                loginShowEmployeeLogin = true,
+                loginShowEmployeeDemo = false,
+                loginShowGoogleSignIn = false,
+                loginShowForgotPassword = false,
+                loginBannerTitle = "AgroHub Portal",
+                loginBannerSubtitle = "Authorized Partners Only",
+                loginFarmerTitle = "Partner Farm Sign In",
+                loginEmployeeTitle = "Verified Staff Access",
+                loginCustomNotice = "Direct farm sales open 6 AM - 10 PM"
+            )
+        ).getOrThrow()
+
+        val saved = repo.observeSystemSettings().first()!!
+        assertFalse(saved.loginShowCustomerLogin)
+        assertFalse(saved.loginShowCustomerDemo)
+        assertFalse(saved.loginShowCustomerSignup)
+        assertTrue(saved.loginShowFarmerLogin)
+        assertFalse(saved.loginShowFarmerDemo)
+        assertTrue(saved.loginShowEmployeeLogin)
+        assertFalse(saved.loginShowEmployeeDemo)
+        assertFalse(saved.loginShowGoogleSignIn)
+        assertFalse(saved.loginShowForgotPassword)
+        assertEquals("AgroHub Portal", saved.loginBannerTitle)
+        assertEquals("Authorized Partners Only", saved.loginBannerSubtitle)
+        assertEquals("Partner Farm Sign In", saved.loginFarmerTitle)
+        assertEquals("Verified Staff Access", saved.loginEmployeeTitle)
+        assertEquals("Direct farm sales open 6 AM - 10 PM", saved.loginCustomNotice)
+    }
+
+    @Test
+    fun roomMigration_v10ToV11_preservesSettingsAndAddsOrderOptionControls() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_v10_v11_${System.currentTimeMillis()}.db"
+        context.deleteDatabase(dbName)
+
+        val factory = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory()
+        val openHelper = factory.create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(10) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        createLegacyV1Schema(db)
+                        SmartFarmDatabase.MIGRATION_1_2.migrate(db)
+                        SmartFarmDatabase.MIGRATION_2_3.migrate(db)
+                        SmartFarmDatabase.MIGRATION_3_4.migrate(db)
+                        SmartFarmDatabase.MIGRATION_4_5.migrate(db)
+                        SmartFarmDatabase.MIGRATION_5_6.migrate(db)
+                        SmartFarmDatabase.MIGRATION_6_7.migrate(db)
+                        SmartFarmDatabase.MIGRATION_7_8.migrate(db)
+                        SmartFarmDatabase.MIGRATION_8_9.migrate(db)
+                        SmartFarmDatabase.MIGRATION_9_10.migrate(db)
+                        db.execSQL("INSERT INTO users (id, name, mobile, email, passwordHash, role, status, profileImageUri, preferredLanguage, preferredCurrency, createdAt) VALUES (21, 'v10 Admin', '01700009998', 'adminv10@smartfarm.app', '${PasswordHasher.hash("admin123")}', 'SUPER_ADMIN', 'ACTIVE', NULL, 'en', 'BDT', 1000)")
+                        db.execSQL("INSERT INTO system_settings (id, announcementBanner, maintenanceMode, defaultCurrencyCode, allowManualPayments) VALUES (1, 'v10 preserved banner', 0, 'BDT', 1)")
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        openHelper.writableDatabase.close()
+
+        val migratedDb = Room.databaseBuilder(context, SmartFarmDatabase::class.java, dbName)
+            .addMigrations(
+                SmartFarmDatabase.MIGRATION_1_2,
+                SmartFarmDatabase.MIGRATION_2_3,
+                SmartFarmDatabase.MIGRATION_3_4,
+                SmartFarmDatabase.MIGRATION_4_5,
+                SmartFarmDatabase.MIGRATION_5_6,
+                SmartFarmDatabase.MIGRATION_6_7,
+                SmartFarmDatabase.MIGRATION_7_8,
+                SmartFarmDatabase.MIGRATION_8_9,
+                SmartFarmDatabase.MIGRATION_9_10,
+                SmartFarmDatabase.MIGRATION_10_11
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val migratedRepo = FarmRepository(migratedDb)
+            migratedRepo.initializeDatabase()
+            val settings = migratedRepo.observeSystemSettings().first()!!
+            assertEquals("v10 preserved banner", settings.announcementBanner)
+            assertTrue(settings.orderShowBkash)
+            assertTrue(settings.orderShowNagad)
+            assertTrue(settings.orderShowBank)
+            assertTrue(settings.orderShowCod)
+            assertFalse(settings.orderOverrideSellerPayments)
+            assertEquals("", settings.orderBkashNumber)
+            assertEquals("", settings.orderNagadNumber)
+            assertEquals("", settings.orderBankAccount)
+        } finally {
+            migratedDb.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    @Test
+    fun superAdmin_editsOrderPaymentOptions_controlsBkashNagadBankAndRejection() = runTest {
+        repo.initializeDatabase()
+        val admin = repo.loginSuperAdmin("admin@smartfarm.app", "admin@2026", "2026").getOrThrow()
+        val farmer = repo.login("farmer@smartfarm.app", "farmer123").getOrThrow()
+        val customer = repo.login("customer@smartfarm.app", "customer123").getOrThrow()
+
+        val farm = repo.observeFarms(farmer.id).first().first()
+        val productId = repo.saveOnlineProduct(
+            InventoryItemEntity(
+                farmId = farm.id,
+                ownerUserId = farmer.id,
+                name = "Test Rice Pack",
+                category = "Rice",
+                quantity = 25.0,
+                unit = "kg",
+                sellingPrice = 120.0,
+                listInMarketplace = true
+            ),
+            actorUserId = farmer.id
+        ).getOrThrow()
+        val product = repo.observeInventory(farmer.id).first().first { it.id == productId }
+        val farmsMap = mapOf(farm.id to farm)
+
+        // Super Admin disables bKash and Bank, keeps Nagad and COD, and sets central Nagad number + note
+        val initial = repo.observeSystemSettings().first()!!
+        repo.adminUpdateSettings(
+            admin.id,
+            initial.copy(
+                orderShowBkash = false,
+                orderShowNagad = true,
+                orderShowBank = false,
+                orderShowCod = true,
+                orderOverrideSellerPayments = true,
+                orderNagadNumber = "01811-223344",
+                orderCustomNote = "Use Nagad or Cash on Delivery only"
+            )
+        ).getOrThrow()
+
+        val savedSettings = repo.observeSystemSettings().first()!!
+        assertFalse(savedSettings.orderShowBkash)
+        assertTrue(savedSettings.orderShowNagad)
+        assertFalse(savedSettings.orderShowBank)
+        assertTrue(savedSettings.orderShowCod)
+        assertTrue(savedSettings.orderOverrideSellerPayments)
+        assertEquals("01811-223344", savedSettings.orderNagadNumber)
+
+        // Placing order with disabled bKash or Bank Transfer fails cleanly
+        val disabledBkash = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 10",
+            paymentMethod = "bKash",
+            cartItems = listOf(product to 1.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "Dhaka",
+            deliveryPoliceStation = "Dhanmondi",
+            requireStructuredFields = true
+        )
+        assertTrue(disabledBkash.isFailure)
+
+        val disabledBank = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 10",
+            paymentMethod = "Bank Transfer",
+            cartItems = listOf(product to 1.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "Dhaka",
+            deliveryPoliceStation = "Dhanmondi",
+            requireStructuredFields = true
+        )
+        assertTrue(disabledBank.isFailure)
+
+        // Placing order with enabled Nagad succeeds
+        val enabledNagad = repo.placeOnlineOrder(
+            customer = customer,
+            deliveryAddress = "House 10",
+            paymentMethod = "Nagad",
+            cartItems = listOf(product to 2.0),
+            farmsMap = farmsMap,
+            deliveryDistrict = "Dhaka",
+            deliveryPoliceStation = "Dhanmondi",
+            paymentReference = "NGD9988",
+            requireStructuredFields = true
+        )
+        assertTrue(enabledNagad.isSuccess)
+        assertEquals("Nagad", enabledNagad.getOrThrow().first().paymentMethod)
     }
 }

@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -34,11 +36,13 @@ import androidx.credentials.CredentialManager
 import com.example.R
 import com.example.auth.GoogleSignInButton
 import com.example.auth.attemptAutoSignIn
+import com.example.data.local.SystemSettingsEntity
 import com.example.data.local.UserRole
 import com.example.i18n.AppLanguage
 import com.example.i18n.AppStrings
 import com.example.i18n.CurrencyOption
 import com.example.ui.components.LanguageCurrencyDialog
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.components.nextThemeModeOverride
 import com.example.ui.components.themeModeIcon
 import com.example.ui.components.themeModeLabel
@@ -59,6 +63,7 @@ fun AuthScreen(
     currentLanguage: AppLanguage,
     currentCurrency: CurrencyOption,
     darkModeOverride: Boolean?,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     authError: String?,
     onClearError: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -72,18 +77,56 @@ fun AuthScreen(
     onSelectDarkMode: (Boolean?) -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
-    var authMode by remember { mutableStateOf(AuthScreenMode.CUSTOMER_LOGIN) }
+    val credentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
 
-    LaunchedEffect(Unit) {
-        attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
-            onUnauthenticated = {},
-            scope = scope
-        )
+    val firstEnabledMode = remember(systemSettings) {
+        when {
+            systemSettings.loginShowCustomerLogin -> AuthScreenMode.CUSTOMER_LOGIN
+            systemSettings.loginShowFarmerLogin -> AuthScreenMode.FARMER_LOGIN
+            systemSettings.loginShowEmployeeLogin -> AuthScreenMode.EMPLOYEE_LOGIN
+            systemSettings.loginShowCustomerSignup -> AuthScreenMode.CREATE_CUSTOMER
+            systemSettings.loginShowFarmerSignup -> AuthScreenMode.CREATE_FARMER
+            else -> AuthScreenMode.CUSTOMER_LOGIN
+        }
+    }
+    val anyPublicPortalEnabled = systemSettings.loginShowCustomerLogin ||
+        systemSettings.loginShowFarmerLogin ||
+        systemSettings.loginShowEmployeeLogin ||
+        systemSettings.loginShowCustomerSignup ||
+        systemSettings.loginShowFarmerSignup
+
+    fun isModeEnabled(mode: AuthScreenMode): Boolean = when (mode) {
+        AuthScreenMode.CUSTOMER_LOGIN -> systemSettings.loginShowCustomerLogin
+        AuthScreenMode.CREATE_CUSTOMER -> systemSettings.loginShowCustomerSignup
+        AuthScreenMode.CREATE_FARMER -> systemSettings.loginShowFarmerSignup
+        AuthScreenMode.FARMER_LOGIN -> systemSettings.loginShowFarmerLogin
+        AuthScreenMode.EMPLOYEE_LOGIN -> systemSettings.loginShowEmployeeLogin
+        AuthScreenMode.FORGOT_PASSWORD -> systemSettings.loginShowForgotPassword
+    }
+
+    var authMode by remember { mutableStateOf(firstEnabledMode) }
+
+    LaunchedEffect(systemSettings, authMode, anyPublicPortalEnabled) {
+        if (anyPublicPortalEnabled && !isModeEnabled(authMode)) {
+            authMode = firstEnabledMode
+        }
+    }
+
+    LaunchedEffect(credentialManager, systemSettings.loginShowGoogleSignIn) {
+        if (credentialManager != null && systemSettings.loginShowGoogleSignIn) {
+            runCatching {
+                attemptAutoSignIn(
+                    context = context,
+                    credentialManager = credentialManager,
+                    onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
+                    onUnauthenticated = {},
+                    scope = scope
+                )
+            }
+        }
     }
 
     var identifier by remember { mutableStateOf("") }
@@ -105,12 +148,14 @@ fun AuthScreen(
     val isBangla = currentLanguage == AppLanguage.BN
 
     fun switchMode(target: AuthScreenMode) {
+        textToolbar.hide()
+        focusManager.clearFocus(force = true)
         onClearError()
         authMode = target
     }
 
-    if (authMode != AuthScreenMode.CUSTOMER_LOGIN) {
-        BackHandler { switchMode(AuthScreenMode.CUSTOMER_LOGIN) }
+    if (authMode != firstEnabledMode && anyPublicPortalEnabled) {
+        BackHandler { switchMode(firstEnabledMode) }
     }
 
     Scaffold(
@@ -131,20 +176,26 @@ fun AuthScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (authMode != AuthScreenMode.CUSTOMER_LOGIN) {
+                    if (anyPublicPortalEnabled && authMode != firstEnabledMode) {
+                        val backLabel = when (firstEnabledMode) {
+                            AuthScreenMode.CUSTOMER_LOGIN -> if (isBangla) "গ্রাহক লগইন" else "Customer Login"
+                            AuthScreenMode.FARMER_LOGIN -> if (isBangla) "খামারি লগইন" else "Farmer Login"
+                            AuthScreenMode.EMPLOYEE_LOGIN -> if (isBangla) "কর্মচারী লগইন" else "Employee Login"
+                            else -> if (isBangla) "ফিরুন" else "Back"
+                        }
                         TextButton(
-                            onClick = { switchMode(AuthScreenMode.CUSTOMER_LOGIN) },
+                            onClick = { switchMode(firstEnabledMode) },
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .testTag("back_to_customer_login_button")
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = if (isBangla) "গ্রাহক লগইনে ফিরুন" else "Back to Customer Login",
+                                contentDescription = backLabel,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isBangla) "গ্রাহক লগইন" else "Customer Login")
+                            Text(backLabel)
                         }
                     } else {
                         Surface(
@@ -163,7 +214,14 @@ fun AuthScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    if (isBangla) "গ্রাহক পোর্টাল" else "Customer Portal",
+                                    when (authMode) {
+                                        AuthScreenMode.FARMER_LOGIN, AuthScreenMode.CREATE_FARMER ->
+                                            if (isBangla) "খামারি পোর্টাল" else "Farm Business Portal"
+                                        AuthScreenMode.EMPLOYEE_LOGIN ->
+                                            if (isBangla) "কর্মচারী পোর্টাল" else "Employee Portal"
+                                        else ->
+                                            if (isBangla) "গ্রাহক পোর্টাল" else "Customer Portal"
+                                    },
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -263,37 +321,65 @@ fun AuthScreen(
                         ) {
                             Icon(Icons.Default.Eco, contentDescription = null, tint = Color(0xFFA5F3B0))
                             Text(
-                                strings.appName,
+                                systemSettings.loginBannerTitle.ifBlank { strings.appName },
                                 style = MaterialTheme.typography.titleLarge,
                                 color = Color.White,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.testTag("auth_banner_title")
                             )
                         }
                         Spacer(Modifier.height(4.dp))
+                        val defaultHeroSubtitle = when (authMode) {
+                            AuthScreenMode.CUSTOMER_LOGIN ->
+                                if (isBangla) "তাজা ডিম, দুধ, মাংস ও খামার পণ্য অর্ডার করতে লগইন করুন"
+                                else "Customer Login • Fresh farm eggs, dairy, meat & direct orders"
+                            AuthScreenMode.CREATE_CUSTOMER ->
+                                if (isBangla) "নতুন গ্রাহক অ্যাকাউন্ট তৈরি করুন"
+                                else "Create Customer Account • Browse & order fresh farm goods"
+                            AuthScreenMode.CREATE_FARMER ->
+                                if (isBangla) "খামারি অ্যাকাউন্ট তৈরি করে আপনার খামার পরিচালনা করুন"
+                                else "Make Farmer Account • Manage farms, livestock, eggs & sales"
+                            AuthScreenMode.FARMER_LOGIN ->
+                                if (isBangla) "খামারি অ্যাকাউন্টে প্রবেশ করুন"
+                                else "Farmer Login • Access your farms, inventory & AI advisor"
+                            AuthScreenMode.EMPLOYEE_LOGIN ->
+                                if (isBangla) "কর্মচারী লগইন • অ্যাডমিনের অনুমোদিত অপশন দেখুন"
+                                else "Employee Login • Access options granted by your Farm Admin"
+                            AuthScreenMode.FORGOT_PASSWORD ->
+                                if (isBangla) "আপনার অ্যাকাউন্টের পাসওয়ার্ড রিসেট করুন"
+                                else "Reset your account password securely"
+                        }
                         Text(
-                            when (authMode) {
-                                AuthScreenMode.CUSTOMER_LOGIN ->
-                                    if (isBangla) "তাজা ডিম, দুধ, মাংস ও খামার পণ্য অর্ডার করতে লগইন করুন"
-                                    else "Customer Login • Fresh farm eggs, dairy, meat & direct orders"
-                                AuthScreenMode.CREATE_CUSTOMER ->
-                                    if (isBangla) "নতুন গ্রাহক অ্যাকাউন্ট তৈরি করুন"
-                                    else "Create Customer Account • Browse & order fresh farm goods"
-                                AuthScreenMode.CREATE_FARMER ->
-                                    if (isBangla) "খামারি অ্যাকাউন্ট তৈরি করে আপনার খামার পরিচালনা করুন"
-                                    else "Make Farmer Account • Manage farms, livestock, eggs & sales"
-                                AuthScreenMode.FARMER_LOGIN ->
-                                    if (isBangla) "খামারি অ্যাকাউন্টে প্রবেশ করুন"
-                                    else "Farmer Login • Access your farms, inventory & AI advisor"
-                                AuthScreenMode.EMPLOYEE_LOGIN ->
-                                    if (isBangla) "কর্মচারী লগইন • অ্যাডমিনের অনুমোদিত অপশন দেখুন"
-                                    else "Employee Login • Access options granted by your Farm Admin"
-                                AuthScreenMode.FORGOT_PASSWORD ->
-                                    if (isBangla) "আপনার অ্যাকাউন্টের পাসওয়ার্ড রিসেট করুন"
-                                    else "Reset your account password securely"
-                            },
+                            systemSettings.loginBannerSubtitle.ifBlank { defaultHeroSubtitle },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.90f)
+                            color = Color.White.copy(alpha = 0.90f),
+                            modifier = Modifier.testTag("auth_banner_subtitle")
                         )
+                    }
+                }
+
+                if (systemSettings.loginCustomNotice.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("auth_custom_notice_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Campaign, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text(
+                                systemSettings.loginCustomNotice,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
                     }
                 }
 
@@ -325,6 +411,34 @@ fun AuthScreen(
                     Spacer(Modifier.height(12.dp))
                 }
 
+                if (!anyPublicPortalEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("login_portals_disabled_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.LockClock, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                if (isBangla) "পাবলিক লগইন সাময়িকভাবে বন্ধ আছে" else "Public Login Portals Paused",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (isBangla) "সুপার অ্যাডমিন বর্তমানে পাবলিক লগইন অপশনগুলো বন্ধ রেখেছেন। প্রয়োজন হলে নিচ থেকে সুপার অ্যাডমিন প্রবেশ করুন।"
+                                else "The administrator has temporarily turned off public login options. Use Super Admin Access below to re-enable portals anytime.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
                 AnimatedContent(targetState = authMode, label = "auth_mode_transition") { mode ->
                     when (mode) {
                         AuthScreenMode.CUSTOMER_LOGIN -> {
@@ -338,7 +452,7 @@ fun AuthScreen(
                                         1.dp,
                                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                                     ),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth().testTag("customer_login_card")
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(18.dp),
@@ -363,13 +477,17 @@ fun AuthScreen(
                                             }
                                             Column {
                                                 Text(
-                                                    if (isBangla) "গ্রাহক লগইন" else "Customer Login",
+                                                    systemSettings.loginCustomerTitle.ifBlank {
+                                                        if (isBangla) "গ্রাহক লগইন" else "Customer Login"
+                                                    },
                                                     style = MaterialTheme.typography.titleLarge,
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Text(
-                                                    if (isBangla) "ইমেইল বা মোবাইল ও পাসওয়ার্ড দিন"
-                                                    else "Sign in with your customer email or mobile",
+                                                    systemSettings.loginCustomerSubtitle.ifBlank {
+                                                        if (isBangla) "ইমেইল বা মোবাইল ও পাসওয়ার্ড দিন"
+                                                        else "Sign in with your customer email or mobile"
+                                                    },
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -411,12 +529,14 @@ fun AuthScreen(
                                                 .testTag("login_password_input")
                                         )
 
-                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                                            TextButton(
-                                                onClick = { switchMode(AuthScreenMode.FORGOT_PASSWORD) },
-                                                modifier = Modifier.testTag("forgot_password_button")
-                                            ) {
-                                                Text(strings.forgotPassword)
+                                        if (systemSettings.loginShowForgotPassword) {
+                                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                                                TextButton(
+                                                    onClick = { switchMode(AuthScreenMode.FORGOT_PASSWORD) },
+                                                    modifier = Modifier.testTag("forgot_password_button")
+                                                ) {
+                                                    Text(strings.forgotPassword)
+                                                }
                                             }
                                         }
 
@@ -435,110 +555,33 @@ fun AuthScreen(
                                             )
                                         }
 
-                                        FilledTonalButton(
-                                            onClick = { onLogin("customer@smartfarm.app", "customer123") },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(48.dp)
-                                                .testTag("demo_customer_button")
-                                        ) {
-                                            Icon(
-                                                Icons.Default.ShoppingBag,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(if (isBangla) "গ্রাহক ডেমো দেখুন" else "Try Customer Demo")
+                                        if (systemSettings.loginShowCustomerDemo) {
+                                            FilledTonalButton(
+                                                onClick = { onLogin("customer@smartfarm.app", "customer123") },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(48.dp)
+                                                    .testTag("demo_customer_button")
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.ShoppingBag,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(if (isBangla) "গ্রাহক ডেমো দেখুন" else "Try Customer Demo")
+                                            }
                                         }
 
-                                        HorizontalDivider()
+                                        if (systemSettings.loginShowGoogleSignIn) {
+                                            HorizontalDivider()
 
-                                        GoogleSignInButton(
-                                            label = if (isBangla) "গুগল দিয়ে সাইন ইন (ক্লাউড সিঙ্ক)" else "Sign in with Google",
-                                            onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
-                                            onAuthError = onGoogleSignInError
-                                        )
-                                    }
-                                }
-
-                                // Other Account Options Section
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(
-                                        if (isBangla) "অন্যান্য অপশন" else "Other Account Options",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        // Option 1: Create Account (Customer)
-                                        OptionActionCard(
-                                            icon = Icons.Default.PersonAdd,
-                                            title = if (isBangla) "অ্যাকাউন্ট তৈরি" else "Create Account",
-                                            subtitle = if (isBangla) "নতুন গ্রাহক" else "New Customer",
-                                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .testTag("create_account_option_button"),
-                                            onClick = { switchMode(AuthScreenMode.CREATE_CUSTOMER) }
-                                        )
-
-                                        // Option 2: Make Farmer / Farm Business Account
-                                        OptionActionCard(
-                                            icon = Icons.Default.Agriculture,
-                                            title = if (isBangla) "খামার ও ব্যবসা অ্যাকাউন্ট" else "Make Farm Business",
-                                            subtitle = if (isBangla) "খামারি ও কৃষি পণ্য বিক্রেতা" else "Farm Owner & Online Seller",
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .testTag("make_farmer_account_option_button"),
-                                            onClick = { switchMode(AuthScreenMode.CREATE_FARMER) }
-                                        )
-                                    }
-
-                                    // Existing Farmer Login button
-                                    OutlinedButton(
-                                        onClick = { switchMode(AuthScreenMode.FARMER_LOGIN) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(50.dp)
-                                            .testTag("farmer_login_option_button")
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Storefront,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            if (isBangla) "খামার ও ব্যবসা লগইন (অনলাইন বিক্রেতা)"
-                                            else "Farm Business Login (Farm Owners & Sellers)",
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-
-                                    // Employee / Staff Login button
-                                    OutlinedButton(
-                                        onClick = { switchMode(AuthScreenMode.EMPLOYEE_LOGIN) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("employee_login_option_button")
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Badge,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            if (isBangla) "কর্মচারী লগইন (অনুমতি ভিত্তিক প্রবেশ)"
-                                            else "Employee Login (Permission-Based Staff)",
-                                            fontWeight = FontWeight.SemiBold
-                                        )
+                                            GoogleSignInButton(
+                                                label = if (isBangla) "গুগল দিয়ে সাইন ইন (ক্লাউড সিঙ্ক)" else "Sign in with Google",
+                                                onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.CUSTOMER) },
+                                                onAuthError = onGoogleSignInError
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -567,11 +610,19 @@ fun AuthScreen(
                                 showPassword = showRegPassword,
                                 onToggleShowPassword = { showRegPassword = !showRegPassword },
                                 onSubmit = { onRegister(regName, regMobile, regEmail, regPassword, UserRole.CUSTOMER) },
-                                alternatePromptLabel = if (isBangla)
-                                    "আপনি কি খামার মালিক? খামারি অ্যাকাউন্ট তৈরি করুন"
-                                else
-                                    "Own a farm instead? Make a Farmer Account",
-                                onAlternateClick = { switchMode(AuthScreenMode.CREATE_FARMER) }
+                                alternatePromptLabel = when {
+                                    systemSettings.loginShowFarmerSignup ->
+                                        if (isBangla) "আপনি কি খামার মালিক? খামারি অ্যাকাউন্ট তৈরি করুন"
+                                        else "Own a farm instead? Make a Farmer Account"
+                                    systemSettings.loginShowCustomerLogin ->
+                                        if (isBangla) "আগেই অ্যাকাউন্ট আছে? গ্রাহক লগইন করুন"
+                                        else "Already have an account? Customer Sign In"
+                                    else -> null
+                                },
+                                onAlternateClick = {
+                                    if (systemSettings.loginShowFarmerSignup) switchMode(AuthScreenMode.CREATE_FARMER)
+                                    else switchMode(firstEnabledMode)
+                                }
                             )
                         }
 
@@ -598,10 +649,10 @@ fun AuthScreen(
                                 showPassword = showRegPassword,
                                 onToggleShowPassword = { showRegPassword = !showRegPassword },
                                 onSubmit = { onRegister(regName, regMobile, regEmail, regPassword, UserRole.FARMER) },
-                                alternatePromptLabel = if (isBangla)
-                                    "আগেই খামার অ্যাকাউন্ট আছে? লগইন করুন"
-                                else
-                                    "Already have a farm business account? Sign In",
+                                alternatePromptLabel = if (systemSettings.loginShowFarmerLogin) {
+                                    if (isBangla) "আগেই খামার অ্যাকাউন্ট আছে? লগইন করুন"
+                                    else "Already have a farm business account? Sign In"
+                                } else null,
                                 onAlternateClick = { switchMode(AuthScreenMode.FARMER_LOGIN) }
                             )
                         }
@@ -638,19 +689,23 @@ fun AuthScreen(
                                                 )
                                             }
                                         }
-                                        Column {
-                                            Text(
-                                                if (isBangla) "খামার ও ব্যবসা লগইন" else "Farm Business Login",
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                if (isBangla) "আপনার খামার ও অনলাইন পণ্য স্টোরে প্রবেশ করুন"
-                                                else "Sign in to manage farms, online products & orders",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                                            Column {
+                                                Text(
+                                                    systemSettings.loginFarmerTitle.ifBlank {
+                                                        if (isBangla) "খামার ও ব্যবসা লগইন" else "Farm Business Login"
+                                                    },
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    systemSettings.loginFarmerSubtitle.ifBlank {
+                                                        if (isBangla) "আপনার খামার ও অনলাইন পণ্য স্টোরে প্রবেশ করুন"
+                                                        else "Sign in to manage farms, online products & orders"
+                                                    },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                     }
 
                                     OutlinedTextField(
@@ -686,9 +741,11 @@ fun AuthScreen(
                                             .testTag("farmer_login_password_input")
                                     )
 
-                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                                        TextButton(onClick = { switchMode(AuthScreenMode.FORGOT_PASSWORD) }) {
-                                            Text(strings.forgotPassword)
+                                    if (systemSettings.loginShowForgotPassword) {
+                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                                            TextButton(onClick = { switchMode(AuthScreenMode.FORGOT_PASSWORD) }) {
+                                                Text(strings.forgotPassword)
+                                            }
                                         }
                                     }
 
@@ -707,40 +764,48 @@ fun AuthScreen(
                                         )
                                     }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        FilledTonalButton(
-                                            onClick = { onLogin("farmer@smartfarm.app", "farmer123") },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(48.dp)
-                                                .testTag("demo_farmer_button")
+                                    if (systemSettings.loginShowFarmerDemo || systemSettings.loginShowFarmerSignup) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Icon(
-                                                Icons.Default.Agriculture,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                            Text(if (isBangla) "খামারি ডেমো" else "Farmer Demo")
-                                        }
-                                        OutlinedButton(
-                                            onClick = { switchMode(AuthScreenMode.CREATE_FARMER) },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(48.dp)
-                                        ) {
-                                            Text(if (isBangla) "নতুন খামারি" else "Make Farmer")
+                                            if (systemSettings.loginShowFarmerDemo) {
+                                                FilledTonalButton(
+                                                    onClick = { onLogin("farmer@smartfarm.app", "farmer123") },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(48.dp)
+                                                        .testTag("demo_farmer_button")
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Agriculture,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(if (isBangla) "খামারি ডেমো" else "Farmer Demo")
+                                                }
+                                            }
+                                            if (systemSettings.loginShowFarmerSignup) {
+                                                OutlinedButton(
+                                                    onClick = { switchMode(AuthScreenMode.CREATE_FARMER) },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(48.dp)
+                                                ) {
+                                                    Text(if (isBangla) "নতুন খামারি" else "Make Farmer")
+                                                }
+                                            }
                                         }
                                     }
 
-                                    GoogleSignInButton(
-                                        label = if (isBangla) "গুগল দিয়ে খামারি লগইন" else "Sign in with Google (Farm Business)",
-                                        onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.FARMER) },
-                                        onAuthError = onGoogleSignInError
-                                    )
+                                    if (systemSettings.loginShowGoogleSignIn) {
+                                        GoogleSignInButton(
+                                            label = if (isBangla) "গুগল দিয়ে খামারি লগইন" else "Sign in with Google (Farm Business)",
+                                            onAuthSuccess = { fbUser -> onGoogleSignInSuccess(fbUser, UserRole.FARMER) },
+                                            onAuthError = onGoogleSignInError
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -779,13 +844,17 @@ fun AuthScreen(
                                         }
                                         Column {
                                             Text(
-                                                if (isBangla) "কর্মচারী লগইন" else "Employee Login",
+                                                systemSettings.loginEmployeeTitle.ifBlank {
+                                                    if (isBangla) "কর্মচারী লগইন" else "Employee Login"
+                                                },
                                                 style = MaterialTheme.typography.titleLarge,
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Text(
-                                                if (isBangla) "অ্যাডমিন যেসব অপশনে অ্যাক্সেস দিয়েছেন শুধু সেগুলো দেখা যাবে"
-                                                else "Sign in to access the farm options enabled by your Admin",
+                                                systemSettings.loginEmployeeSubtitle.ifBlank {
+                                                    if (isBangla) "অ্যাডমিন যেসব অপশনে অ্যাক্সেস দিয়েছেন শুধু সেগুলো দেখা যাবে"
+                                                    else "Sign in to access the farm options enabled by your Admin"
+                                                },
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -840,20 +909,22 @@ fun AuthScreen(
                                         )
                                     }
 
-                                    FilledTonalButton(
-                                        onClick = { onLogin("karim@smartfarm.app", "employee123") },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("demo_employee_button")
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Badge,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(if (isBangla) "কর্মচারী ডেমো (করিম)" else "Demo Employee (Karim)")
+                                    if (systemSettings.loginShowEmployeeDemo) {
+                                        FilledTonalButton(
+                                            onClick = { onLogin("karim@smartfarm.app", "employee123") },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp)
+                                                .testTag("demo_employee_button")
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Badge,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(if (isBangla) "কর্মচারী ডেমো (করিম)" else "Demo Employee (Karim)")
+                                        }
                                     }
                                 }
                             }
@@ -902,7 +973,7 @@ fun AuthScreen(
                                     Button(
                                         onClick = {
                                             onResetPassword(resetIdentifier, resetNewPassword) {
-                                                authMode = AuthScreenMode.CUSTOMER_LOGIN
+                                                authMode = firstEnabledMode
                                                 identifier = resetIdentifier
                                                 password = ""
                                             }
@@ -917,6 +988,112 @@ fun AuthScreen(
                             }
                         }
                     }
+                }
+
+                // Dynamic "Other Account Options" portal switcher respecting Super Admin toggles
+                val showCustomerSignupCard = systemSettings.loginShowCustomerSignup && authMode != AuthScreenMode.CREATE_CUSTOMER
+                val showFarmerSignupCard = systemSettings.loginShowFarmerSignup && authMode != AuthScreenMode.CREATE_FARMER
+                val showCustomerPortalBtn = systemSettings.loginShowCustomerLogin && authMode != AuthScreenMode.CUSTOMER_LOGIN
+                val showFarmerPortalBtn = systemSettings.loginShowFarmerLogin && authMode != AuthScreenMode.FARMER_LOGIN
+                val showEmployeePortalBtn = systemSettings.loginShowEmployeeLogin && authMode != AuthScreenMode.EMPLOYEE_LOGIN
+                if (showCustomerSignupCard || showFarmerSignupCard || showCustomerPortalBtn || showFarmerPortalBtn || showEmployeePortalBtn) {
+                    Spacer(Modifier.height(14.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            if (isBangla) "অন্যান্য অপশন" else "Other Account Options",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (showCustomerSignupCard || showFarmerSignupCard) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                if (showCustomerSignupCard) {
+                                    OptionActionCard(
+                                        icon = Icons.Default.PersonAdd,
+                                        title = if (isBangla) "অ্যাকাউন্ট তৈরি" else "Create Account",
+                                        subtitle = if (isBangla) "নতুন গ্রাহক" else "New Customer",
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("create_account_option_button"),
+                                        onClick = { switchMode(AuthScreenMode.CREATE_CUSTOMER) }
+                                    )
+                                }
+                                if (showFarmerSignupCard) {
+                                    OptionActionCard(
+                                        icon = Icons.Default.Agriculture,
+                                        title = if (isBangla) "খামার ও ব্যবসা অ্যাকাউন্ট" else "Make Farm Business",
+                                        subtitle = if (isBangla) "খামারি ও কৃষি পণ্য বিক্রেতা" else "Farm Owner & Online Seller",
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("make_farmer_account_option_button"),
+                                        onClick = { switchMode(AuthScreenMode.CREATE_FARMER) }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (showCustomerPortalBtn) {
+                            OutlinedButton(
+                                onClick = { switchMode(AuthScreenMode.CUSTOMER_LOGIN) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp)
+                                    .testTag("customer_login_option_button")
+                            ) {
+                                Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    systemSettings.loginCustomerTitle.ifBlank {
+                                        if (isBangla) "গ্রাহক লগইন" else "Customer Login"
+                                    },
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        if (showFarmerPortalBtn) {
+                            OutlinedButton(
+                                onClick = { switchMode(AuthScreenMode.FARMER_LOGIN) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp)
+                                    .testTag("farmer_login_option_button")
+                            ) {
+                                Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (isBangla) "খামার ও ব্যবসা লগইন (অনলাইন বিক্রেতা)"
+                                    else "Farm Business Login (Farm Owners & Sellers)",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        if (showEmployeePortalBtn) {
+                            OutlinedButton(
+                                onClick = { switchMode(AuthScreenMode.EMPLOYEE_LOGIN) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("employee_login_option_button")
+                            ) {
+                                Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (isBangla) "কর্মচারী লগইন (অনুমতি ভিত্তিক প্রবেশ)"
+                                    else "Employee Login (Permission-Based Staff)",
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
                 }
 
                 Spacer(Modifier.height(22.dp))
@@ -965,47 +1142,55 @@ fun AuthScreen(
         var devPin by remember { mutableStateOf("") }
         var localErr by remember { mutableStateOf<String?>(null) }
 
+        fun dismissAdminDialog() {
+            textToolbar.hide()
+            focusManager.clearFocus(force = true)
+            showAdminAccessDialog = false
+        }
+
         AlertDialog(
-            onDismissRequest = { showAdminAccessDialog = false },
+            onDismissRequest = { dismissAdminDialog() },
             icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(if (isBangla) "সুপার অ্যাডমিন পোর্টাল" else "Super Admin Portal") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        if (isBangla)
-                            "অনুমোদিত সুপার অ্যাডমিন ইমেইল, পাসওয়ার্ড এবং সিকিউরিটি পিন দিন।"
-                        else
-                            "Enter your authorized Super Admin email, password, and Developer Security PIN.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    localErr?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                ProvideSafeTextToolbar {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            if (isBangla)
+                                "অনুমোদিত সুপার অ্যাডমিন ইমেইল, পাসওয়ার্ড এবং সিকিউরিটি পিন দিন।"
+                            else
+                                "Enter your authorized Super Admin email, password, and Developer Security PIN.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        localErr?.let { err ->
+                            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedTextField(
+                            value = adminEmail,
+                            onValueChange = { adminEmail = it; localErr = null },
+                            label = { Text(if (isBangla) "অ্যাডমিন ইমেইল" else "Admin Email") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_email_input")
+                        )
+                        OutlinedTextField(
+                            value = adminPass,
+                            onValueChange = { adminPass = it; localErr = null },
+                            label = { Text(if (isBangla) "অ্যাডমিন পাসওয়ার্ড" else "Admin Password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_password_input")
+                        )
+                        OutlinedTextField(
+                            value = devPin,
+                            onValueChange = { devPin = it; localErr = null },
+                            label = { Text(if (isBangla) "ডেভেলপার সিকিউরিটি পিন" else "Developer Security PIN") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("admin_login_pin_input")
+                        )
                     }
-                    OutlinedTextField(
-                        value = adminEmail,
-                        onValueChange = { adminEmail = it; localErr = null },
-                        label = { Text(if (isBangla) "অ্যাডমিন ইমেইল" else "Admin Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("admin_login_email_input")
-                    )
-                    OutlinedTextField(
-                        value = adminPass,
-                        onValueChange = { adminPass = it; localErr = null },
-                        label = { Text(if (isBangla) "অ্যাডমিন পাসওয়ার্ড" else "Admin Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("admin_login_password_input")
-                    )
-                    OutlinedTextField(
-                        value = devPin,
-                        onValueChange = { devPin = it; localErr = null },
-                        label = { Text(if (isBangla) "ডেভেলপার সিকিউরিটি পিন" else "Developer Security PIN") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("admin_login_pin_input")
-                    )
                 }
             },
             confirmButton = {
@@ -1014,7 +1199,7 @@ fun AuthScreen(
                         if (adminEmail.isBlank() || adminPass.isBlank() || devPin.isBlank()) {
                             localErr = if (isBangla) "ইমেইল, পাসওয়ার্ড এবং পিন আবশ্যক।" else "Email, password, and PIN are required."
                         } else {
-                            showAdminAccessDialog = false
+                            dismissAdminDialog()
                             onAdminLogin(adminEmail.trim(), adminPass, devPin.trim())
                         }
                     },
@@ -1022,7 +1207,7 @@ fun AuthScreen(
                 ) { Text(if (isBangla) "কনসোল খুলুন" else "Unlock Console") }
             },
             dismissButton = {
-                TextButton(onClick = { showAdminAccessDialog = false }) { Text(strings.cancel) }
+                TextButton(onClick = { dismissAdminDialog() }) { Text(strings.cancel) }
             }
         )
     }
@@ -1090,7 +1275,7 @@ private fun RegistrationCard(
     showPassword: Boolean,
     onToggleShowPassword: () -> Unit,
     onSubmit: () -> Unit,
-    alternatePromptLabel: String,
+    alternatePromptLabel: String?,
     onAlternateClick: () -> Unit
 ) {
     Surface(
@@ -1199,11 +1384,13 @@ private fun RegistrationCard(
                 Text(submitLabel, fontWeight = FontWeight.Bold)
             }
 
-            TextButton(
-                onClick = onAlternateClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(alternatePromptLabel)
+            if (!alternatePromptLabel.isNullOrBlank()) {
+                TextButton(
+                    onClick = onAlternateClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(alternatePromptLabel)
+                }
             }
         }
     }

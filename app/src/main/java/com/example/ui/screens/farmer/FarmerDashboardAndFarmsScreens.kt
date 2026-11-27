@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +62,7 @@ fun FarmerDashboardScreen(
     onOpenOrders: () -> Unit = onOpenSales,
     onOpenOnlineProducts: () -> Unit = {},
     onOpenAgriculture: () -> Unit = {},
+    onOpenStaffHr: () -> Unit = {},
     onOpenInventory: () -> Unit = onOpenFarms,
     onOpenPermissions: () -> Unit = {},
     onOpenGuide: () -> Unit = {},
@@ -259,7 +262,14 @@ fun FarmerDashboardScreen(
         }
 
         // Quick Actions Row (only permitted actions)
+        val canOpenStaffHr = policy.isAdminOwner || policy.hasAny(
+            AppPermission.STAFF_TARGETS_VIEW,
+            AppPermission.STAFF_HR_MANAGE,
+            AppPermission.EMPLOYEES_VIEW,
+            AppPermission.EMPLOYEES_MANAGE
+        )
         val showAnyQuickAction = policy.canManagePermissions() ||
+            canOpenStaffHr ||
             policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE) ||
             policy.hasAny(AppPermission.ONLINE_PRODUCTS_VIEW, AppPermission.ONLINE_PRODUCTS_MANAGE) ||
             policy.has(AppPermission.AI_ADVISOR) ||
@@ -271,6 +281,16 @@ fun FarmerDashboardScreen(
         if (showAnyQuickAction) {
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (canOpenStaffHr) {
+                        item {
+                            QuickActionPill(
+                                Icons.Default.Groups,
+                                strings.staffHr,
+                                onOpenStaffHr,
+                                testTag = "dashboard_staff_hr_pill"
+                            )
+                        }
+                    }
                     if (policy.hasAny(AppPermission.AGRICULTURE_VIEW, AppPermission.AGRICULTURE_MANAGE)) {
                         item {
                             QuickActionPill(
@@ -477,6 +497,70 @@ fun FarmerDashboardScreen(
                         }
                         FilledTonalButton(onClick = { if (agriUnlocked) onOpenAgriculture() else if (canSubscribe) onOpenSubscription() }) {
                             Text(if (agriUnlocked) tr("Open", "খুলুন") else tr("Unlock", "আনলক"))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Dedicated Separate Option Card: Staff Salary, Bonus, Expenses, Morning-Night Targets & Auto-Messages
+        if (canOpenStaffHr) {
+            item {
+                val activeTargetCount = state.taskTargets.count { it.status != EmployeeTaskStatus.COMPLETED.key }
+                val totalBonusPaid = state.salaryPayments.filter {
+                    it.paymentType == EmployeePaymentType.BONUS.key || it.paymentType == EmployeePaymentType.TARGET_REWARD.key
+                }.sumOf { it.amount }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.52f),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_staff_hr_card")
+                        .clickable { onOpenStaffHr() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Groups,
+                                        contentDescription = strings.staffHr,
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    strings.staffHr,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    tr(
+                                        "$activeTargetCount open targets • ${state.employees.size} staff • Bonuses ${CurrencyFormatter.formatCompact(totalBonusPaid, currency)} • Auto-Messages",
+                                        "$activeTargetCount টি চলমান টার্গেট • ${state.employees.size} জন কর্মচারী • বোনাস ${CurrencyFormatter.formatCompact(totalBonusPaid, currency)} • অটো-মেসেজ"
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                        FilledTonalButton(onClick = onOpenStaffHr) {
+                            Text(tr("Open", "খুলুন"))
                         }
                     }
                 }
@@ -837,6 +921,7 @@ fun FarmsScreen(
     state: FarmerDashboardState,
     strings: AppStrings,
     currency: CurrencyOption,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     openCreateOnEntry: Boolean = false,
     onCreateEntryConsumed: () -> Unit = {},
     onSelectFarm: (Long?) -> Unit,
@@ -1078,6 +1163,19 @@ fun FarmsScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                val payInfo = buildList {
+                                    if (farm.bkashNumber.isNotBlank()) add("bKash: ${farm.bkashNumber}")
+                                    if (farm.nagadNumber.isNotBlank()) add("Nagad: ${farm.nagadNumber}")
+                                    if (farm.bankAccountInfo.isNotBlank()) add("Bank: ${farm.bankAccountInfo}")
+                                }.joinToString(" • ")
+                                if (payInfo.isNotBlank()) {
+                                    Text(
+                                        payInfo,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -1115,6 +1213,7 @@ fun FarmsScreen(
         FarmEditorDialog(
             initial = editingFarm,
             currency = currency,
+            systemSettings = systemSettings,
             onDismiss = { showCreateDialog = false; editingFarm = null },
             onSave = { farm ->
                 onSaveFarm(farm)
@@ -1137,6 +1236,7 @@ private fun FarmStatChip(label: String, value: String) {
 private fun FarmEditorDialog(
     initial: FarmEntity?,
     currency: CurrencyOption,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     onDismiss: () -> Unit,
     onSave: (FarmEntity) -> Unit
 ) {
@@ -1149,6 +1249,9 @@ private fun FarmEditorDialog(
     var customCat by remember { mutableStateOf(initial?.customCategoryName ?: "") }
     var managerName by remember { mutableStateOf(initial?.managerName ?: "") }
     var managerPhone by remember { mutableStateOf(initial?.managerPhone ?: "") }
+    var bkashNumber by remember { mutableStateOf(initial?.bkashNumber ?: "") }
+    var nagadNumber by remember { mutableStateOf(initial?.nagadNumber ?: "") }
+    var bankAccountInfo by remember { mutableStateOf(initial?.bankAccountInfo ?: "") }
     var investmentText by remember {
         mutableStateOf(
             if (initial != null && initial.initialInvestment > 0)
@@ -1159,12 +1262,20 @@ private fun FarmEditorDialog(
     var imageUri by remember { mutableStateOf(initial?.imageUri) }
     var showNameError by remember { mutableStateOf(false) }
 
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+    val safeDismiss = {
+        textToolbar.hide()
+        focusManager.clearFocus(force = true)
+        onDismiss()
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) imageUri = uri.toString()
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = safeDismiss,
         title = {
             Text(
                 if (initial == null) tr("Create New Farm", "নতুন খামার তৈরি করুন")
@@ -1172,115 +1283,153 @@ private fun FarmEditorDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 440.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { safeLaunchImagePicker(picker) },
-                    modifier = Modifier.fillMaxWidth()
+            ProvideSafeTextToolbar {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (imageUri == null) tr("Choose Farm Image", "খামারের ছবি নির্বাচন করুন")
-                        else tr("Change Selected Image", "নির্বাচিত ছবি পরিবর্তন করুন")
-                    )
-                }
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        if (it.isNotBlank()) showNameError = false
-                    },
-                    label = { Text(tr("Farm Name *", "খামারের নাম *")) },
-                    isError = showNameError && name.isBlank(),
-                    supportingText = if (showNameError && name.isBlank()) {
-                        { Text(tr("Please enter a farm name", "অনুগ্রহ করে খামারের নাম লিখুন")) }
-                    } else null,
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("farm_name_input")
-                )
-                OutlinedTextField(
-                    value = farmCode,
-                    onValueChange = { farmCode = it },
-                    label = { Text(tr("Farm ID", "খামার আইডি")) },
-                    trailingIcon = {
-                        IconButton(onClick = { farmCode = "FM-${(1000..9999).random()}" }) {
-                            Icon(Icons.Default.Refresh, contentDescription = tr("Generate new Farm ID", "নতুন খামার আইডি তৈরি করুন"))
-                        }
-                    },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("farm_code_input")
-                )
-                OutlinedTextField(
-                    value = location,
-                    onValueChange = { location = it },
-                    label = { Text(tr("Location (City/District)", "অবস্থান (শহর/জেলা)")) },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("farm_location_input")
-                )
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    label = { Text(tr("Full Address", "সম্পূর্ণ ঠিকানা")) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Text(tr("Farm Category", "খামারের ধরন"), style = MaterialTheme.typography.labelLarge)
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FarmCategory.entries.forEach { cat ->
-                        FilterChip(
-                            selected = category == cat.name,
-                            onClick = { category = cat.name },
-                            label = { Text(DomainLocalization.farmCategory(cat.name, "", isBn)) }
+                    OutlinedButton(
+                        onClick = { safeLaunchImagePicker(picker) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (imageUri == null) tr("Choose Farm Image", "খামারের ছবি নির্বাচন করুন")
+                            else tr("Change Selected Image", "নির্বাচিত ছবি পরিবর্তন করুন")
                         )
                     }
-                }
-                if (category == FarmCategory.CUSTOM.name) {
                     OutlinedTextField(
-                        value = customCat,
-                        onValueChange = { customCat = it },
-                        label = { Text(tr("Custom Category Name", "কাস্টম ধরনের নাম")) },
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            if (it.isNotBlank()) showNameError = false
+                        },
+                        label = { Text(tr("Farm Name *", "খামারের নাম *")) },
+                        isError = showNameError && name.isBlank(),
+                        supportingText = if (showNameError && name.isBlank()) {
+                            { Text(tr("Please enter a farm name", "অনুগ্রহ করে খামারের নাম লিখুন")) }
+                        } else null,
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("farm_name_input")
+                    )
+                    OutlinedTextField(
+                        value = farmCode,
+                        onValueChange = { farmCode = it },
+                        label = { Text(tr("Farm ID", "খামার আইডি")) },
+                        trailingIcon = {
+                            IconButton(onClick = { farmCode = "FM-${(1000..9999).random()}" }) {
+                                Icon(Icons.Default.Refresh, contentDescription = tr("Generate new Farm ID", "নতুন খামার আইডি তৈরি করুন"))
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("farm_code_input")
+                    )
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = { location = it },
+                        label = { Text(tr("Location (City/District)", "অবস্থান (শহর/জেলা)")) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("farm_location_input")
+                    )
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { address = it },
+                        label = { Text(tr("Full Address", "সম্পূর্ণ ঠিকানা")) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(tr("Farm Category", "খামারের ধরন"), style = MaterialTheme.typography.labelLarge)
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FarmCategory.entries.forEach { cat ->
+                            FilterChip(
+                                selected = category == cat.name,
+                                onClick = { category = cat.name },
+                                label = { Text(DomainLocalization.farmCategory(cat.name, "", isBn)) }
+                            )
+                        }
+                    }
+                    if (category == FarmCategory.CUSTOM.name) {
+                        OutlinedTextField(
+                            value = customCat,
+                            onValueChange = { customCat = it },
+                            label = { Text(tr("Custom Category Name", "কাস্টম ধরনের নাম")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    OutlinedTextField(
+                        value = managerName,
+                        onValueChange = { managerName = it },
+                        label = { Text(tr("Manager Name", "ম্যানেজারের নাম")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = managerPhone,
+                        onValueChange = { managerPhone = it },
+                        label = { Text(tr("Manager Phone", "ম্যানেজারের মোবাইল")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (systemSettings.orderShowBkash || systemSettings.orderShowNagad || systemSettings.orderShowBank) {
+                        Text(
+                            tr("Customer Payment Receiving Accounts", "অনলাইন পেমেন্ট গ্রহণের নম্বর"),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (systemSettings.orderShowBkash) {
+                            OutlinedTextField(
+                                value = bkashNumber,
+                                onValueChange = { bkashNumber = it },
+                                label = { Text(tr("bKash Number", "বিকাশ নম্বর")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("farm_bkash_input")
+                            )
+                        }
+                        if (systemSettings.orderShowNagad) {
+                            OutlinedTextField(
+                                value = nagadNumber,
+                                onValueChange = { nagadNumber = it },
+                                label = { Text(tr("Nagad Number", "নগদ নম্বর")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("farm_nagad_input")
+                            )
+                        }
+                        if (systemSettings.orderShowBank) {
+                            OutlinedTextField(
+                                value = bankAccountInfo,
+                                onValueChange = { bankAccountInfo = it },
+                                label = { Text(tr("Bank Account Details", "ব্যাংক অ্যাকাউন্ট তথ্য")) },
+                                placeholder = { Text(tr("e.g. Sonali Bank A/C 12345678, Branch", "যেমন: সোনালী ব্যাংক A/C ১২৩৪৫, শাখা")) },
+                                modifier = Modifier.fillMaxWidth().testTag("farm_bank_input")
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = investmentText,
+                        onValueChange = { investmentText = it },
+                        label = { Text("${tr("Initial Investment", "প্রাথমিক বিনিয়োগ")} (${currency.symbol})") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                OutlinedTextField(
-                    value = managerName,
-                    onValueChange = { managerName = it },
-                    label = { Text(tr("Manager Name", "ম্যানেজারের নাম")) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = managerPhone,
-                    onValueChange = { managerPhone = it },
-                    label = { Text(tr("Manager Phone", "ম্যানেজারের মোবাইল")) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = investmentText,
-                    onValueChange = { investmentText = it },
-                    label = { Text("${tr("Initial Investment", "প্রাথমিক বিনিয়োগ")} (${currency.symbol})") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         },
         confirmButton = {
@@ -1290,6 +1439,8 @@ private fun FarmEditorDialog(
                         showNameError = true
                         return@Button
                     }
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     val baseInvestment = CurrencyFormatter.toBaseBdt(investmentText.toDoubleOrNull() ?: 0.0, currency)
                     onSave(
                         (initial ?: FarmEntity(ownerUserId = 0L, farmCode = farmCode, name = name, location = location, address = address)).copy(
@@ -1302,13 +1453,16 @@ private fun FarmEditorDialog(
                             managerName = managerName.trim(),
                             managerPhone = managerPhone.trim(),
                             initialInvestment = baseInvestment,
-                            imageUri = imageUri
+                            imageUri = imageUri,
+                            bkashNumber = bkashNumber.trim(),
+                            nagadNumber = nagadNumber.trim(),
+                            bankAccountInfo = bankAccountInfo.trim()
                         )
                     )
                 },
                 modifier = Modifier.testTag("save_farm_button")
             ) { Text(tr("Save Farm", "খামার সংরক্ষণ করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
+        dismissButton = { TextButton(onClick = safeDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }

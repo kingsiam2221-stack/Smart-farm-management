@@ -20,6 +20,7 @@ data class CartEntry(
 
 data class FarmerDashboardState(
     val ownerUserId: Long = 0L,
+    val currentEmployeeId: Long? = null,
     val accessPolicy: EmployeeAccessPolicy = EmployeeAccessPolicy(),
     val farms: List<FarmEntity> = emptyList(),
     val selectedFarmId: Long? = null, // null = All Farms
@@ -35,6 +36,8 @@ data class FarmerDashboardState(
     val expenses: List<ExpenseEntity> = emptyList(),
     val employees: List<EmployeeEntity> = emptyList(),
     val salaryPayments: List<SalaryPaymentEntity> = emptyList(),
+    val taskTargets: List<EmployeeTaskTargetEntity> = emptyList(),
+    val employeeAutoMessages: List<EmployeeAutoMessageEntity> = emptyList(),
     val subscriptions: List<UserSubscriptionEntity> = emptyList(),
     val supportRequests: List<SupportRequestEntity> = emptyList(),
     val employeePermissions: List<EmployeePermissionEntity> = emptyList(),
@@ -108,7 +111,8 @@ class SmartFarmViewModel(
             if (user == null) flowOf(emptyList())
             else {
                 val (ownerId, _) = repository.resolveEmployeeContext(user)
-                repository.observeNotifications(ownerId)
+                if (ownerId == user.id) repository.observeNotifications(user.id)
+                else repository.observeNotificationsForUserOrOwner(user.id, ownerId)
             }
         }
         .catch { emit(emptyList()) }
@@ -158,7 +162,7 @@ class SmartFarmViewModel(
         if (user == null || (user.role != UserRole.FARMER.name && user.role != UserRole.EMPLOYEE.name)) {
             flowOf(FarmerDashboardState())
         } else {
-            val (ownerId, _) = repository.resolveEmployeeContext(user)
+            val (ownerId, linkedEmployeeId) = repository.resolveEmployeeContext(user)
             val f1 = combine(
                 repository.observeFarms(ownerId),
                 repository.observeAnimalCategories(ownerId),
@@ -168,6 +172,7 @@ class SmartFarmViewModel(
             ) { farms, cats, animals, events, eggs ->
                 FarmerDashboardState(
                     ownerUserId = ownerId,
+                    currentEmployeeId = linkedEmployeeId,
                     farms = farms,
                     selectedFarmId = activeFarmId,
                     categories = cats,
@@ -210,7 +215,13 @@ class SmartFarmViewModel(
             ) { lands, crops, agriExp, ads ->
                 Tuple4(lands, crops, agriExp, ads)
             }
-            combine(f1, f2, f3, f4, f5) { base, t2, t3, t4, t5 ->
+            val f6 = combine(
+                repository.observeTaskTargets(ownerId),
+                repository.observeAutoMessages(ownerId)
+            ) { targets, autoMsgs ->
+                targets to autoMsgs
+            }
+            val combinedBase = combine(f1, f2, f3, f4, f5) { base, t2, t3, t4, t5 ->
                 base.copy(
                     accessPolicy = t4.c,
                     inventory = t2.a,
@@ -230,6 +241,12 @@ class SmartFarmViewModel(
                     agriCrops = t5.b,
                     agriExpenses = t5.c,
                     productAds = t5.d
+                )
+            }
+            combine(combinedBase, f6) { state, (targets, autoMsgs) ->
+                state.copy(
+                    taskTargets = targets,
+                    employeeAutoMessages = autoMsgs
                 )
             }
         }
@@ -548,9 +565,10 @@ class SmartFarmViewModel(
     }
 
     fun markNotificationsRead() {
-        val ownerId = effectiveOwnerId() ?: return
+        val user = currentUser.value ?: return
+        val ownerId = effectiveOwnerId() ?: user.id
         viewModelScope.launch {
-            repository.markNotificationsRead(ownerId)
+            repository.markNotificationsRead(userId = user.id, ownerId = ownerId)
                 .onFailure { _snackbarMessage.value = it.message ?: msg("Failed to update alerts.", "সতর্কতা আপডেট করা যায়নি।") }
         }
     }
@@ -1141,12 +1159,123 @@ class SmartFarmViewModel(
     }
 
     fun paySalary(emp: EmployeeEntity, amount: Double, monthLabel: String, note: String) {
+        recordEmployeePayment(emp, amount, EmployeePaymentType.SALARY, monthLabel, note)
+    }
+
+    fun recordEmployeePayment(
+        emp: EmployeeEntity,
+        amount: Double,
+        paymentType: EmployeePaymentType,
+        periodOrTitle: String,
+        note: String
+    ) {
         viewModelScope.launch {
             runPermitted { _, actor ->
-                repository.payEmployeeSalary(emp, amount, monthLabel, note, actorUserId = actor)
+                repository.recordEmployeePayment(emp, amount, paymentType, periodOrTitle, note, actorUserId = actor)
+                    .getOrThrow()
+                val label = if (isBn()) paymentType.labelBn else paymentType.labelEn
                 _snackbarMessage.value = msg(
-                    "Salary paid to ${emp.name}.",
-                    "${emp.name} কে বেতন প্রদান করা হয়েছে।"
+                    "$label recorded for ${emp.name}.",
+                    "${emp.name}-এর জন্য $label সংরক্ষিত হয়েছে।"
+                )
+            }
+        }
+    }
+
+    fun deleteSalaryPayment(payment: SalaryPaymentEntity) {
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteSalaryPayment(payment, actorUserId = actor).getOrThrow()
+                _snackbarMessage.value = msg("Staff payment record deleted.", "কর্মচারীর লেনদেন মুছে ফেলা হয়েছে।")
+            }
+        }
+    }
+
+    fun saveEmployeeTaskTarget(target: EmployeeTaskTargetEntity, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            runPermitted { ownerId, actor ->
+                repository.saveEmployeeTaskTarget(target.copy(ownerUserId = ownerId), actorUserId = actor).getOrThrow()
+                _snackbarMessage.value = msg(
+                    "Target saved & auto-message sent.",
+                    "টার্গেট সংরক্ষণ ও অটো-মেসেজ পাঠানো হয়েছে।"
+                )
+                onDone()
+            }
+        }
+    }
+
+    fun updateEmployeeTaskTargetStatus(
+        target: EmployeeTaskTargetEntity,
+        newStatus: EmployeeTaskStatus,
+        completionNote: String = ""
+    ) {
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                val bonusCredited = repository.updateEmployeeTaskTargetStatus(
+                    target = target,
+                    newStatus = newStatus,
+                    completionNote = completionNote,
+                    actorUserId = actor
+                ).getOrThrow()
+                val currency = CurrencyOption.fromCode(preferences.value.currencyCode)
+                _snackbarMessage.value = if (bonusCredited) {
+                    val amtText = CurrencyFormatter.format(target.rewardBonusAmount, currency)
+                    msg(
+                        "Target completed! $amtText bonus credited & auto-message sent.",
+                        "টার্গেট সম্পন্ন! $amtText বোনাস যোগ হয়েছে ও অটো-মেসেজ পাঠানো হয়েছে।"
+                    )
+                } else if (newStatus == EmployeeTaskStatus.COMPLETED) {
+                    msg(
+                        "Target marked completed & owner notified.",
+                        "টার্গেট সম্পন্ন হয়েছে ও মালিককে জানানো হয়েছে।"
+                    )
+                } else {
+                    msg("Target status updated.", "টার্গেটের অবস্থা আপডেট হয়েছে।")
+                }
+            }
+        }
+    }
+
+    fun deleteEmployeeTaskTarget(target: EmployeeTaskTargetEntity) {
+        viewModelScope.launch {
+            runPermitted { _, actor ->
+                repository.deleteEmployeeTaskTarget(target, actorUserId = actor).getOrThrow()
+                _snackbarMessage.value = msg("Target deleted.", "টার্গেট মুছে ফেলা হয়েছে।")
+            }
+        }
+    }
+
+    fun sendEmployeeAutoMessage(
+        farmId: Long,
+        employeeId: Long,
+        messageType: AutoMessageType,
+        subject: String,
+        body: String,
+        onDone: () -> Unit = {}
+    ) {
+        val actor = actorId() ?: return
+        val ownerId = farmerState.value.ownerUserId.takeIf { it > 0L } ?: actor
+        viewModelScope.launch {
+            repository.sendEmployeeAutoMessage(
+                ownerUserId = ownerId,
+                farmId = farmId,
+                employeeId = employeeId,
+                messageType = messageType,
+                subject = subject,
+                body = body,
+                actorUserId = actor,
+                isAutoGenerated = true
+            ).onSuccess {
+                _snackbarMessage.value = msg(
+                    "Automated message sent & delivered.",
+                    "অটোমেটেড বার্তা পাঠানো হয়েছে।"
+                )
+                onDone()
+            }.onFailure { err ->
+                _snackbarMessage.value = localizeError(
+                    err.message,
+                    "Could not send message.",
+                    "বার্তা পাঠানো যায়নি।"
                 )
             }
         }
@@ -1344,7 +1473,17 @@ class SmartFarmViewModel(
         }
     }
 
-    fun placeOrder(deliveryAddress: String, paymentMethod: String, onSuccess: () -> Unit) {
+    fun placeOrder(
+        customerName: String,
+        customerPhone: String,
+        deliveryDistrict: String,
+        deliveryPoliceStation: String,
+        deliveryAddress: String,
+        deliveryLandmark: String,
+        paymentMethod: String,
+        paymentReference: String,
+        onSuccess: () -> Unit
+    ) {
         val customer = currentUser.value ?: return
         val entries = _cart.value
         val farmsMap = customerState.value.farmsById
@@ -1354,7 +1493,14 @@ class SmartFarmViewModel(
                 deliveryAddress = deliveryAddress,
                 paymentMethod = paymentMethod,
                 cartItems = entries.map { it.item to it.quantity },
-                farmsMap = farmsMap
+                farmsMap = farmsMap,
+                deliveryDistrict = deliveryDistrict,
+                deliveryPoliceStation = deliveryPoliceStation,
+                deliveryLandmark = deliveryLandmark,
+                customerNameOverride = customerName,
+                customerPhoneOverride = customerPhone,
+                paymentReference = paymentReference,
+                requireStructuredFields = true
             ).onSuccess { orders ->
                 _cart.value = emptyList()
                 val orderNums = orders.joinToString { it.orderNumber }

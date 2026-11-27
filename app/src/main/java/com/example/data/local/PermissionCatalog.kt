@@ -192,6 +192,22 @@ enum class AppPermission(
         descEn = "Add/delete employees, mark attendance & pay salary",
         descBn = "কর্মচারী যোগ/মুছা, উপস্থিতি ও বেতন পরিশোধ"
     ),
+    STAFF_TARGETS_VIEW(
+        key = "STAFF_TARGETS_VIEW",
+        group = PermissionGroup.EMPLOYEES,
+        titleEn = "My Tasks, Targets, Pay & Auto-Messages",
+        titleBn = "নিজের কাজ, টার্গেট, বেতন ও অটো-মেসেজ",
+        descEn = "View morning-to-night targets, claim task bonus, view pay & send auto updates",
+        descBn = "সকাল থেকে রাতের টার্গেট দেখা, বোনাস পাওয়া ও অটোমেটেড বার্তা পাঠানো"
+    ),
+    STAFF_HR_MANAGE(
+        key = "STAFF_HR_MANAGE",
+        group = PermissionGroup.EMPLOYEES,
+        titleEn = "Manage Salaries, Bonuses, Expenses & Targets",
+        titleBn = "বেতন, বোনাস, কর্মচারী খরচ ও টার্গেট পরিচালনা",
+        descEn = "Assign daily targets with cash bonus and record salary, bonus & staff expenses",
+        descBn = "কর্মচারীর বেতন, বোনাস, খরচ এবং টাকার পুরস্কারসহ দৈনিক টার্গেট নির্ধারণ"
+    ),
     SALES_VIEW(
         key = "SALES_VIEW",
         group = PermissionGroup.SALES_CRM,
@@ -369,6 +385,8 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.EXPENSES_VIEW.key,
             AppPermission.EXPENSES_MANAGE.key,
             AppPermission.EMPLOYEES_VIEW.key,
+            AppPermission.STAFF_TARGETS_VIEW.key,
+            AppPermission.STAFF_HR_MANAGE.key,
             AppPermission.SALES_VIEW.key,
             AppPermission.SALES_CREATE_COLLECT.key,
             AppPermission.CUSTOMERS_VIEW.key,
@@ -396,6 +414,7 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.EGGS_VIEW.key,
             AppPermission.EGGS_RECORD.key,
             AppPermission.INVENTORY_VIEW.key,
+            AppPermission.STAFF_TARGETS_VIEW.key,
             AppPermission.FARM_GUIDE_VIEW.key
         )
     ),
@@ -405,6 +424,7 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
         setOf(
             AppPermission.DASHBOARD_OVERVIEW.key,
             AppPermission.INVENTORY_VIEW.key,
+            AppPermission.STAFF_TARGETS_VIEW.key,
             AppPermission.SALES_VIEW.key,
             AppPermission.SALES_CREATE_COLLECT.key,
             AppPermission.CUSTOMERS_VIEW.key,
@@ -425,6 +445,7 @@ enum class PermissionPreset(val labelEn: String, val labelBn: String, val keys: 
             AppPermission.LIVESTOCK_VIEW.key,
             AppPermission.EGGS_VIEW.key,
             AppPermission.INVENTORY_VIEW.key,
+            AppPermission.STAFF_TARGETS_VIEW.key,
             AppPermission.SALES_VIEW.key,
             AppPermission.AGRICULTURE_VIEW.key,
             AppPermission.FARM_GUIDE_VIEW.key
@@ -473,6 +494,7 @@ object PermissionCatalog {
         add(AppPermission.DASHBOARD_OVERVIEW.key)
         add(AppPermission.FARMS_VIEW.key)
         add(AppPermission.FARM_GUIDE_VIEW.key)
+        add(AppPermission.STAFF_TARGETS_VIEW.key)
         if (employee.canManageInventory) {
             add(AppPermission.INVENTORY_VIEW.key)
             add(AppPermission.INVENTORY_MANAGE.key)

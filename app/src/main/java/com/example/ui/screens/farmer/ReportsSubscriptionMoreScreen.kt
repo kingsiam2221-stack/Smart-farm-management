@@ -469,6 +469,7 @@ private fun SubscriptionTab(
             onDismissRequest = { selectedPlan = null },
             title = { Text("${tr("Checkout", "চেকআউট")}: ${plan.name}") },
             text = {
+                ProvideSafeTextToolbar {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -592,6 +593,7 @@ private fun SubscriptionTab(
                         }
                     }
                 }
+                }
             },
             confirmButton = {
                 Button(
@@ -713,12 +715,14 @@ private fun NotificationsAndSupportTab(
             onDismissRequest = { showSupportDialog = false },
             title = { Text(tr("Submit Support Request", "সাপোর্ট অনুরোধ পাঠান")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text(tr("Subject *", "বিষয় *")) }, singleLine = true)
-                    OutlinedTextField(value = msg, onValueChange = { msg = it }, label = { Text(tr("Message *", "বার্তা *")) })
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(value = subject, onValueChange = { subject = it }, label = { Text(tr("Subject *", "বিষয় *")) }, singleLine = true)
+                        OutlinedTextField(value = msg, onValueChange = { msg = it }, label = { Text(tr("Message *", "বার্তা *")) })
+                    }
                 }
             },
             confirmButton = {

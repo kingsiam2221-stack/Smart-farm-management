@@ -42,6 +42,7 @@ import com.example.i18n.CurrencyOption
 import com.example.i18n.LocalAppLanguage
 import com.example.i18n.Localization
 import com.example.ui.components.AppSettingsScreen
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.screens.admin.SuperAdminDashboardScreen
 import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.customer.CustomerPortalScreen
@@ -111,10 +112,11 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(LocalAppLanguage provides language) {
                 SmartFarmTheme(themeMode = themeMode, darkTheme = systemDark) {
-                    Scaffold(
-                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                        snackbarHost = { SnackbarHost(snackbarHostState) }
-                    ) { outerPadding ->
+                    ProvideSafeTextToolbar {
+                        Scaffold(
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                            snackbarHost = { SnackbarHost(snackbarHostState) }
+                        ) { outerPadding ->
                         Box(modifier = Modifier.fillMaxSize().padding(outerPadding)) {
                             val context = LocalContext.current
                             val coroutineScope = rememberCoroutineScope()
@@ -143,6 +145,7 @@ class MainActivity : ComponentActivity() {
                                     currentLanguage = language,
                                     currentCurrency = currency,
                                     darkModeOverride = prefs.darkModeOverride,
+                                    systemSettings = settings,
                                     authError = authError,
                                     onClearError = viewModel::clearAuthError,
                                     onLogin = viewModel::login,
@@ -266,6 +269,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -273,7 +277,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class FarmerSection {
-    DASHBOARD, FARMS, AGRICULTURE, ONLINE_PRODUCTS, AI_AD_STUDIO, LIVESTOCK, EGGS, OPERATIONS, COMMERCE, GUIDE, PERMISSIONS, MORE, SETTINGS
+    DASHBOARD, FARMS, AGRICULTURE, ONLINE_PRODUCTS, AI_AD_STUDIO, LIVESTOCK, EGGS, OPERATIONS, STAFF_HR, COMMERCE, GUIDE, PERMISSIONS, MORE, SETTINGS
 }
 
 private data class NavEntry(
@@ -298,7 +302,14 @@ private fun isSectionPermitted(sec: FarmerSection, policy: EmployeeAccessPolicy)
     FarmerSection.EGGS ->
         policy.hasAny(AppPermission.EGGS_VIEW, AppPermission.EGGS_RECORD)
     FarmerSection.OPERATIONS ->
-        policy.hasAny(AppPermission.INVENTORY_VIEW, AppPermission.EXPENSES_VIEW, AppPermission.EMPLOYEES_VIEW)
+        policy.hasAny(AppPermission.INVENTORY_VIEW, AppPermission.EXPENSES_VIEW)
+    FarmerSection.STAFF_HR ->
+        policy.isAdminOwner || policy.hasAny(
+            AppPermission.STAFF_TARGETS_VIEW,
+            AppPermission.STAFF_HR_MANAGE,
+            AppPermission.EMPLOYEES_VIEW,
+            AppPermission.EMPLOYEES_MANAGE
+        )
     FarmerSection.COMMERCE ->
         policy.hasAny(AppPermission.SALES_VIEW, AppPermission.CUSTOMERS_VIEW, AppPermission.ORDERS_VIEW)
     FarmerSection.GUIDE ->
@@ -508,6 +519,7 @@ private fun FarmerShell(
             NavEntry(FarmerSection.LIVESTOCK, strings.livestock, Icons.Default.Pets),
             NavEntry(FarmerSection.EGGS, strings.eggs, Icons.Default.Egg),
             NavEntry(FarmerSection.OPERATIONS, strings.operations, Icons.Default.Inventory2),
+            NavEntry(FarmerSection.STAFF_HR, strings.staffHr, Icons.Default.Groups),
             NavEntry(FarmerSection.COMMERCE, strings.commerce, Icons.Default.PointOfSale),
             NavEntry(FarmerSection.GUIDE, strings.farmGuide, Icons.AutoMirrored.Filled.MenuBook),
             NavEntry(FarmerSection.PERMISSIONS, strings.permissions, Icons.Default.AdminPanelSettings),
@@ -642,6 +654,7 @@ private fun FarmerShell(
                                             modifier = when (entry.section) {
                                                 FarmerSection.AGRICULTURE -> Modifier.testTag("mobile_agriculture_chip")
                                                 FarmerSection.AI_AD_STUDIO -> Modifier.testTag("mobile_ai_ad_studio_chip")
+                                                FarmerSection.STAFF_HR -> Modifier.testTag("mobile_staff_hr_chip")
                                                 FarmerSection.GUIDE -> Modifier.testTag("mobile_guide_chip")
                                                 FarmerSection.PERMISSIONS -> Modifier.testTag("mobile_permissions_chip")
                                                 FarmerSection.ONLINE_PRODUCTS -> Modifier.testTag("mobile_online_products_chip")
@@ -723,6 +736,7 @@ private fun FarmerShell(
                                     section = FarmerSection.ONLINE_PRODUCTS
                                 },
                                 onOpenAgriculture = { section = FarmerSection.AGRICULTURE },
+                                onOpenStaffHr = { section = FarmerSection.STAFF_HR },
                                 onOpenInventory = {
                                     operationsInitialTab = OperationsTab.INVENTORY
                                     section = FarmerSection.OPERATIONS
@@ -743,6 +757,7 @@ private fun FarmerShell(
                                 state = farmerState,
                                 strings = strings,
                                 currency = currentCurrency,
+                                systemSettings = systemSettings,
                                 openCreateOnEntry = openCreateFarmOnEntry,
                                 onCreateEntryConsumed = { openCreateFarmOnEntry = false },
                                 onSelectFarm = viewModel::selectActiveFarm,
@@ -770,6 +785,7 @@ private fun FarmerShell(
                                 state = farmerState,
                                 strings = strings,
                                 currency = currentCurrency,
+                                systemSettings = systemSettings,
                                 openAddOnEntry = openAddOnlineProductOnEntry,
                                 onAddEntryConsumed = { openAddOnlineProductOnEntry = false },
                                 onSelectFarm = viewModel::selectActiveFarm,
@@ -837,12 +853,27 @@ private fun FarmerShell(
                                 onDeleteInventory = viewModel::deleteInventoryItem,
                                 onAddExpense = viewModel::addExpense,
                                 onDeleteExpense = viewModel::deleteExpense,
+                                onOpenStaffHr = { section = FarmerSection.STAFF_HR },
+                                onOpenSubscription = openSubscriptionTab
+                            )
+
+                            FarmerSection.STAFF_HR -> StaffHrTargetsScreen(
+                                state = farmerState,
+                                strings = strings,
+                                currency = currentCurrency,
+                                onSelectFarm = viewModel::selectActiveFarm,
                                 onSaveEmployee = viewModel::saveEmployee,
                                 onDeleteEmployee = viewModel::deleteEmployee,
                                 onMarkAttendance = viewModel::markAttendance,
-                                onPaySalary = viewModel::paySalary,
+                                onRecordEmployeePayment = viewModel::recordEmployeePayment,
+                                onDeleteSalaryPayment = viewModel::deleteSalaryPayment,
+                                onSaveTaskTarget = viewModel::saveEmployeeTaskTarget,
+                                onUpdateTaskTargetStatus = viewModel::updateEmployeeTaskTargetStatus,
+                                onDeleteTaskTarget = viewModel::deleteEmployeeTaskTarget,
+                                onSendAutoMessage = viewModel::sendEmployeeAutoMessage,
                                 onOpenPermissions = { section = FarmerSection.PERMISSIONS },
-                                onOpenSubscription = openSubscriptionTab
+                                onOpenSubscription = openSubscriptionTab,
+                                onMessage = viewModel::showMessage
                             )
 
                             FarmerSection.COMMERCE -> CommerceScreen(

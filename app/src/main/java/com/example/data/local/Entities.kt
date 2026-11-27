@@ -94,6 +94,9 @@ data class FarmEntity(
     val managerName: String = "",
     val managerPhone: String = "",
     val initialInvestment: Double = 0.0,
+    val bkashNumber: String = "",
+    val nagadNumber: String = "",
+    val bankAccountInfo: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -253,6 +256,9 @@ data class InventoryItemEntity(
     val description: String = "",
     val imageUri: String? = null,
     val sourcingType: String = ProductSourcingType.FARM_PRODUCED.key,
+    val sellerBkashNumber: String = "",
+    val sellerNagadNumber: String = "",
+    val sellerBankAccount: String = "",
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -337,6 +343,10 @@ data class OrderEntity(
     val customerName: String,
     val customerPhone: String,
     val deliveryAddress: String,
+    val deliveryDistrict: String = "",
+    val deliveryPoliceStation: String = "",
+    val deliveryLandmark: String = "",
+    val paymentReference: String = "",
     val farmId: Long,
     val farmOwnerUserId: Long,
     val farmName: String,
@@ -391,6 +401,18 @@ data class EmployeeEntity(
     val linkedUserId: Long? = null
 )
 
+enum class EmployeePaymentType(val key: String, val labelEn: String, val labelBn: String) {
+    SALARY("SALARY", "Salary", "বেতন"),
+    BONUS("BONUS", "Bonus", "বোনাস"),
+    EXPENSE("EXPENSE", "Employee Expense", "কর্মচারী খরচ"),
+    TARGET_REWARD("TARGET_REWARD", "Target Reward Bonus", "টার্গেট বোনাস");
+
+    companion object {
+        fun fromKey(key: String): EmployeePaymentType =
+            entries.firstOrNull { it.key == key } ?: SALARY
+    }
+}
+
 @Entity(
     tableName = "salary_payments",
     foreignKeys = [
@@ -406,7 +428,8 @@ data class SalaryPaymentEntity(
     val amount: Double,
     val monthLabel: String,
     val paymentDate: Long = System.currentTimeMillis(),
-    val note: String = ""
+    val note: String = "",
+    val paymentType: String = EmployeePaymentType.SALARY.key
 )
 
 @Entity(tableName = "subscription_plans")
@@ -486,7 +509,7 @@ data class AdminAuditLogEntity(
 @Entity(tableName = "system_settings")
 data class SystemSettingsEntity(
     @PrimaryKey val id: Int = 1,
-    val announcementBanner: String = "Welcome to Smart Farm Management! Keep livestock vaccinations & low-stock alerts updated.",
+    val announcementBanner: String = "Welcome to Smart Buy and Sell! Keep livestock vaccinations & low-stock alerts updated.",
     val maintenanceMode: Boolean = false,
     val defaultCurrencyCode: String = "BDT",
     val allowManualPayments: Boolean = true,
@@ -509,7 +532,37 @@ data class SystemSettingsEntity(
     val developerWhatsApp: String = "+8801700000000",
     val developerEmail: String = "support@smartfarm.app",
     val developerSupportNote: String = "Contact our team by phone or WhatsApp anytime for app support, bug reports, or business setup.",
-    val adminPinHash: String = ""
+    val adminPinHash: String = "",
+    // Super Admin Login Screen Customization & Portal Controls
+    val loginShowCustomerLogin: Boolean = true,
+    val loginShowCustomerDemo: Boolean = true,
+    val loginShowCustomerSignup: Boolean = true,
+    val loginShowFarmerLogin: Boolean = true,
+    val loginShowFarmerDemo: Boolean = true,
+    val loginShowFarmerSignup: Boolean = true,
+    val loginShowEmployeeLogin: Boolean = true,
+    val loginShowEmployeeDemo: Boolean = true,
+    val loginShowGoogleSignIn: Boolean = true,
+    val loginShowForgotPassword: Boolean = true,
+    val loginBannerTitle: String = "",
+    val loginBannerSubtitle: String = "",
+    val loginCustomerTitle: String = "",
+    val loginCustomerSubtitle: String = "",
+    val loginFarmerTitle: String = "",
+    val loginFarmerSubtitle: String = "",
+    val loginEmployeeTitle: String = "",
+    val loginEmployeeSubtitle: String = "",
+    val loginCustomNotice: String = "",
+    // Super Admin Order Payment Options Control (Customer Checkout & Seller Receiving Accounts)
+    val orderShowBkash: Boolean = true,
+    val orderShowNagad: Boolean = true,
+    val orderShowBank: Boolean = true,
+    val orderShowCod: Boolean = true,
+    val orderOverrideSellerPayments: Boolean = false,
+    val orderBkashNumber: String = "",
+    val orderNagadNumber: String = "",
+    val orderBankAccount: String = "",
+    val orderCustomNote: String = ""
 )
 
 @Entity(
@@ -826,6 +879,101 @@ data class ProductAdEntity(
     val accentColorHex: String = "#1B5E20",
     val isActiveInShop: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+enum class EmployeeTaskTimeSlot(val key: String, val orderIndex: Int, val labelEn: String, val labelBn: String) {
+    MORNING("MORNING", 0, "Morning (6 AM - 11 AM)", "সকাল (৬টা - ১১টা)"),
+    AFTERNOON("AFTERNOON", 1, "Afternoon (11 AM - 4 PM)", "দুপুর (১১টা - ৪টা)"),
+    EVENING("EVENING", 2, "Evening (4 PM - 8 PM)", "সন্ধ্যা (৪টা - ৮টা)"),
+    NIGHT("NIGHT", 3, "Night (8 PM - 11 PM)", "রাত (৮টা - ১১টা)"),
+    FULL_DAY("FULL_DAY", 4, "Full Day (Morning - Night)", "সারাদিন (সকাল - রাত)");
+
+    companion object {
+        fun fromKey(key: String): EmployeeTaskTimeSlot =
+            entries.firstOrNull { it.key == key } ?: MORNING
+    }
+}
+
+enum class EmployeeTaskStatus(val key: String, val labelEn: String, val labelBn: String) {
+    PENDING("PENDING", "Pending", "বাকি আছে"),
+    IN_PROGRESS("IN_PROGRESS", "In Progress", "চলমান"),
+    COMPLETED("COMPLETED", "Completed", "সম্পন্ন");
+
+    companion object {
+        fun fromKey(key: String): EmployeeTaskStatus =
+            entries.firstOrNull { it.key == key } ?: PENDING
+    }
+}
+
+enum class AutoMessageType(val key: String, val labelEn: String, val labelBn: String) {
+    MORNING_CHECKIN("MORNING_CHECKIN", "Morning Check-In", "সকালের হাজিরা ও আপডেট"),
+    MIDDAY_UPDATE("MIDDAY_UPDATE", "Midday Progress", "দুপুরের কাজের আপডেট"),
+    TASK_ASSIGNED("TASK_ASSIGNED", "Target Assigned", "নতুন টার্গেট দেওয়া হয়েছে"),
+    TASK_COMPLETED("TASK_COMPLETED", "Target Completed", "টার্গেট সম্পন্ন"),
+    NIGHT_REPORT("NIGHT_REPORT", "Night Closing Report", "রাতের সমাপনী রিপোর্ট"),
+    CUSTOM("CUSTOM", "Quick Automated Update", "অটোমেটেড বার্তা");
+
+    companion object {
+        fun fromKey(key: String): AutoMessageType =
+            entries.firstOrNull { it.key == key } ?: CUSTOM
+    }
+}
+
+@Entity(
+    tableName = "employee_task_targets",
+    foreignKeys = [
+        ForeignKey(entity = FarmEntity::class, parentColumns = ["id"], childColumns = ["farmId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = EmployeeEntity::class, parentColumns = ["id"], childColumns = ["employeeId"], onDelete = ForeignKey.CASCADE)
+    ],
+    indices = [
+        Index("ownerUserId"),
+        Index("farmId"),
+        Index("employeeId"),
+        Index(value = ["ownerUserId", "status", "createdAt"])
+    ]
+)
+data class EmployeeTaskTargetEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long,
+    val employeeId: Long,
+    val employeeName: String,
+    val timeSlot: String = EmployeeTaskTimeSlot.MORNING.key,
+    val title: String,
+    val description: String = "",
+    val targetGoalText: String = "",
+    val rewardBonusAmount: Double = 10.0,
+    val status: String = EmployeeTaskStatus.PENDING.key,
+    val rewardCredited: Boolean = false,
+    val completionNote: String = "",
+    val targetDateMillis: Long = System.currentTimeMillis(),
+    val completedAt: Long? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "employee_auto_messages",
+    indices = [
+        Index("ownerUserId"),
+        Index("farmId"),
+        Index("employeeId"),
+        Index(value = ["ownerUserId", "sentAt"])
+    ]
+)
+data class EmployeeAutoMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ownerUserId: Long,
+    val farmId: Long = 0L,
+    val employeeId: Long,
+    val senderUserId: Long,
+    val senderName: String,
+    val senderRole: String,
+    val recipientLabel: String,
+    val messageType: String = AutoMessageType.CUSTOM.key,
+    val subject: String,
+    val messageBody: String,
+    val isAutoGenerated: Boolean = true,
+    val sentAt: Long = System.currentTimeMillis()
 )
 
 

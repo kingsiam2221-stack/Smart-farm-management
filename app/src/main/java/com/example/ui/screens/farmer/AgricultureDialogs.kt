@@ -18,6 +18,7 @@ import com.example.i18n.CurrencyOption
 import com.example.i18n.DomainLocalization
 import com.example.i18n.isBangla
 import com.example.i18n.tr
+import com.example.ui.components.ProvideSafeTextToolbar
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -47,6 +48,7 @@ fun AgriLandDialog(
             )
         },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -120,6 +122,7 @@ fun AgriLandDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            }
         },
         confirmButton = {
             Button(
@@ -190,6 +193,7 @@ fun AgriCropDialog(
             )
         },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -304,6 +308,7 @@ fun AgriCropDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            }
         },
         confirmButton = {
             Button(
@@ -384,6 +389,7 @@ fun AgriHarvestDialog(
         onDismissRequest = onDismiss,
         title = { Text("${tr("Harvest & Yield Worth", "ফলন ও বাজার মূল্য")}: ${crop.title}") },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -453,6 +459,7 @@ fun AgriHarvestDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            }
         },
         confirmButton = {
             Button(
@@ -499,6 +506,7 @@ fun AgriExpenseDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr("Record Agriculture Expense", "কৃষি খাতভিত্তিক খরচ যোগ")) },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -575,6 +583,7 @@ fun AgriExpenseDialog(
                     label = { Text(tr("Details / Purpose", "বিবরণ (যেমন: ২ বস্তা ইউরিয়া, ৩ জন শ্রমিক)")) },
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
             }
         },
         confirmButton = {

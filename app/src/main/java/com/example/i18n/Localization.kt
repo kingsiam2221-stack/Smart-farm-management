@@ -4,6 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.example.data.local.AnimalEventType
 import com.example.data.local.AttendanceStatus
+import com.example.data.local.AutoMessageType
+import com.example.data.local.EmployeePaymentType
+import com.example.data.local.EmployeeTaskStatus
+import com.example.data.local.EmployeeTaskTimeSlot
 import com.example.data.local.FarmCategory
 import com.example.data.local.OrderStatus
 import com.example.data.local.PaymentStatus
@@ -183,6 +187,9 @@ object DomainLocalization {
             "Medicine" -> "ওষুধ"
             "Vaccination" -> "টিকা প্রদান"
             "Employee Salary" -> "কর্মচারী বেতন"
+            "Employee Bonus" -> "কর্মচারী বোনাস"
+            "Employee Expense" -> "কর্মচারী খরচ"
+            "Employee Target Reward" -> "টার্গেট পূরণ বোনাস"
             "Electricity" -> "বিদ্যুৎ বিল"
             "Water" -> "পানি বিল"
             "Transportation" -> "পরিবহন"
@@ -193,12 +200,34 @@ object DomainLocalization {
         }
     }
 
+    fun employeePaymentType(key: String, isBn: Boolean): String {
+        val type = EmployeePaymentType.fromKey(key)
+        return if (isBn) type.labelBn else type.labelEn
+    }
+
+    fun taskTimeSlot(key: String, isBn: Boolean): String {
+        val slot = EmployeeTaskTimeSlot.fromKey(key)
+        return if (isBn) slot.labelBn else slot.labelEn
+    }
+
+    fun taskStatus(key: String, isBn: Boolean): String {
+        val status = EmployeeTaskStatus.fromKey(key)
+        return if (isBn) status.labelBn else status.labelEn
+    }
+
+    fun autoMessageType(key: String, isBn: Boolean): String {
+        val msgType = AutoMessageType.fromKey(key)
+        return if (isBn) msgType.labelBn else msgType.labelEn
+    }
+
     fun paymentMethod(method: String, isBn: Boolean): String {
         if (!isBn) return method
         return when (method) {
             "Cash" -> "নগদ (ক্যাশ)"
             "Bank Transfer" -> "ব্যাংক ট্রান্সফার"
             "Cash on Delivery" -> "ক্যাশ অন ডেলিভারি"
+            "bKash" -> "বিকাশ (bKash)"
+            "Nagad" -> "নগদ (Nagad)"
             else -> method
         }
     }
@@ -368,13 +397,14 @@ data class AppStrings(
     val onlineProducts: String,
     val agriculture: String,
     val aiAdStudio: String,
+    val staffHr: String,
     val settings: String,
     val helpAndSupport: String
 )
 
 object Localization {
     val english = AppStrings(
-        appName = "Smart Farm Management",
+        appName = "Smart Buy and Sell",
         dashboard = "Dashboard",
         farms = "Farms",
         livestock = "Livestock",
@@ -451,12 +481,13 @@ object Localization {
         onlineProducts = "Online Products",
         agriculture = "Agriculture",
         aiAdStudio = "AI Ad Video",
+        staffHr = "Staff, Pay & Targets",
         settings = "Settings",
         helpAndSupport = "Help & Support"
     )
 
     val bangla = AppStrings(
-        appName = "স্মার্ট ফার্ম ম্যানেজমেন্ট",
+        appName = "স্মার্ট বাই অ্যান্ড সেল",
         dashboard = "ড্যাশবোর্ড",
         farms = "খামার",
         livestock = "পশু ও পাখি",
@@ -533,6 +564,7 @@ object Localization {
         onlineProducts = "অনলাইন পণ্য",
         agriculture = "কৃষি হিসাব",
         aiAdStudio = "AI বিজ্ঞাপন ভিডিও",
+        staffHr = "কর্মচারী, বেতন ও টার্গেট",
         settings = "সেটিংস",
         helpAndSupport = "সাহায্য ও সাপোর্ট"
     )

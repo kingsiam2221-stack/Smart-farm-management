@@ -111,7 +111,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         subAdminDao.insertNotification(
             AppNotificationEntity(
                 targetUserId = id,
-                title = "Welcome to Smart Farm Management",
+                title = "Welcome to Smart Buy and Sell",
                 message = "Your ${role.name.lowercase()} account is ready.",
                 category = "SYSTEM"
             )
@@ -153,7 +153,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         subAdminDao.insertNotification(
             AppNotificationEntity(
                 targetUserId = id,
-                title = "Welcome to Smart Farm Management",
+                title = "Welcome to Smart Buy and Sell",
                 message = "Signed in with Google. Your ${safeRole.name.lowercase()} cloud account is ready.",
                 category = "SYSTEM"
             )
@@ -194,8 +194,12 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     fun observeExpenses(ownerId: Long): Flow<List<ExpenseEntity>> = opsDao.observeExpensesByOwner(ownerId)
     fun observeEmployees(ownerId: Long): Flow<List<EmployeeEntity>> = opsDao.observeEmployeesByOwner(ownerId)
     fun observeSalaryPayments(ownerId: Long): Flow<List<SalaryPaymentEntity>> = opsDao.observeSalaryPaymentsByOwner(ownerId)
+    fun observeTaskTargets(ownerId: Long): Flow<List<EmployeeTaskTargetEntity>> = opsDao.observeTaskTargetsByOwner(ownerId)
+    fun observeAutoMessages(ownerId: Long): Flow<List<EmployeeAutoMessageEntity>> = opsDao.observeAutoMessagesByOwner(ownerId)
     fun observeUserSubscriptions(userId: Long): Flow<List<UserSubscriptionEntity>> = subAdminDao.observeSubscriptionsByUser(userId)
     fun observeNotifications(userId: Long): Flow<List<AppNotificationEntity>> = subAdminDao.observeNotificationsForUser(userId)
+    fun observeNotificationsForUserOrOwner(userId: Long, ownerId: Long): Flow<List<AppNotificationEntity>> =
+        subAdminDao.observeNotificationsForUserOrOwner(userId, ownerId)
     fun observePlans(): Flow<List<SubscriptionPlanEntity>> = subAdminDao.observePlans()
     fun observeSystemSettings(): Flow<SystemSettingsEntity?> = subAdminDao.observeSystemSettings()
     fun observeUserSupport(userId: Long): Flow<List<SupportRequestEntity>> = subAdminDao.observeSupportByUser(userId)
@@ -295,6 +299,31 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         throw SecurityException("Access Denied.")
     }
 
+    private suspend fun requireAnyActorPermission(
+        actorUserId: Long?,
+        targetOwnerId: Long,
+        vararg permissions: AppPermission
+    ) {
+        if (actorUserId == null || actorUserId == targetOwnerId) return
+        val actor = userDao.getUserById(actorUserId)
+            ?: throw SecurityException("Unauthorized: user not found.")
+        if (actor.status != AccountStatus.ACTIVE.name) {
+            throw SecurityException("Account is not active.")
+        }
+        if (actor.role == UserRole.SUPER_ADMIN.name) return
+        if (actor.role == UserRole.FARMER.name && actor.id == targetOwnerId) return
+        if (actor.role == UserRole.EMPLOYEE.name && actor.employerOwnerId == targetOwnerId) {
+            val emp = opsDao.getEmployeeByLinkedUserId(actor.id)
+                ?: throw SecurityException("Employee profile not linked.")
+            val anyGranted = permissions.any { perm ->
+                permissionDao.getPermission(emp.id, perm.key)?.granted == true
+            }
+            if (anyGranted) return
+            throw SecurityException("Permission denied: ${permissions.firstOrNull()?.titleEn ?: "Action"}")
+        }
+        throw SecurityException("Access Denied.")
+    }
+
     private suspend fun requireActiveSubscription(
         ownerId: Long,
         actorUserId: Long?,
@@ -352,7 +381,10 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                     name = cleanName,
                     farmCode = uniqueCode,
                     location = farm.location.trim(),
-                    address = farm.address.trim()
+                    address = farm.address.trim(),
+                    bkashNumber = farm.bkashNumber.trim(),
+                    nagadNumber = farm.nagadNumber.trim(),
+                    bankAccountInfo = farm.bankAccountInfo.trim()
                 )
             )
         } else {
@@ -366,7 +398,10 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                     name = cleanName,
                     farmCode = trimmedCode,
                     location = farm.location.trim(),
-                    address = farm.address.trim()
+                    address = farm.address.trim(),
+                    bkashNumber = farm.bkashNumber.trim(),
+                    nagadNumber = farm.nagadNumber.trim(),
+                    bankAccountInfo = farm.bankAccountInfo.trim()
                 )
             )
             farm.id
@@ -568,28 +603,34 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     suspend fun saveInventoryItem(item: InventoryItemEntity, actorUserId: Long? = null): Long {
         requireActorPermission(actorUserId, item.ownerUserId, AppPermission.INVENTORY_MANAGE)
         requireActiveSubscription(item.ownerUserId, actorUserId, SubscriptionFeature.INVENTORY_EXPENSES)
-        return if (item.id == 0L) {
-            val id = inventoryDao.insertItem(item)
-            if (item.quantity > 0.0) {
+        val farm = farmDao.getFarmById(item.farmId)
+        val enrichedItem = item.copy(
+            sellerBkashNumber = item.sellerBkashNumber.trim().ifBlank { farm?.bkashNumber.orEmpty() },
+            sellerNagadNumber = item.sellerNagadNumber.trim().ifBlank { farm?.nagadNumber.orEmpty() },
+            sellerBankAccount = item.sellerBankAccount.trim().ifBlank { farm?.bankAccountInfo.orEmpty() }
+        )
+        return if (enrichedItem.id == 0L) {
+            val id = inventoryDao.insertItem(enrichedItem)
+            if (enrichedItem.quantity > 0.0) {
                 inventoryDao.insertMovement(
                     InventoryMovementEntity(
                         inventoryItemId = id,
-                        farmId = item.farmId,
-                        ownerUserId = item.ownerUserId,
+                        farmId = enrichedItem.farmId,
+                        ownerUserId = enrichedItem.ownerUserId,
                         movementType = "STOCK_IN",
-                        quantityDelta = item.quantity,
-                        unitCost = item.unitCost,
-                        supplierName = item.supplierName,
+                        quantityDelta = enrichedItem.quantity,
+                        unitCost = enrichedItem.unitCost,
+                        supplierName = enrichedItem.supplierName,
                         note = "Initial stock added"
                     )
                 )
             }
-            checkLowStockNotification(item.copy(id = id))
+            checkLowStockNotification(enrichedItem.copy(id = id))
             id
         } else {
-            inventoryDao.updateItem(item.copy(updatedAt = System.currentTimeMillis()))
-            checkLowStockNotification(item)
-            item.id
+            inventoryDao.updateItem(enrichedItem.copy(updatedAt = System.currentTimeMillis()))
+            checkLowStockNotification(enrichedItem)
+            enrichedItem.id
         }
     }
 
@@ -668,6 +709,23 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             throw SecurityException("Selected farm does not belong to this farm account.")
         }
 
+        val sellerBkash = item.sellerBkashNumber.trim().ifBlank { farm.bkashNumber }
+        val sellerNagad = item.sellerNagadNumber.trim().ifBlank { farm.nagadNumber }
+        val sellerBank = item.sellerBankAccount.trim().ifBlank { farm.bankAccountInfo }
+
+        if ((farm.bkashNumber.isBlank() && sellerBkash.isNotBlank()) ||
+            (farm.nagadNumber.isBlank() && sellerNagad.isNotBlank()) ||
+            (farm.bankAccountInfo.isBlank() && sellerBank.isNotBlank())
+        ) {
+            farmDao.update(
+                farm.copy(
+                    bkashNumber = farm.bkashNumber.ifBlank { sellerBkash },
+                    nagadNumber = farm.nagadNumber.ifBlank { sellerNagad },
+                    bankAccountInfo = farm.bankAccountInfo.ifBlank { sellerBank }
+                )
+            )
+        }
+
         val normalized = item.copy(
             name = cleanName,
             category = cleanCategory,
@@ -680,6 +738,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             } else {
                 ProductSourcingType.FARM_PRODUCED.key
             },
+            sellerBkashNumber = sellerBkash,
+            sellerNagadNumber = sellerNagad,
+            sellerBankAccount = sellerBank,
             updatedAt = System.currentTimeMillis()
         )
 
@@ -877,10 +938,71 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         deliveryAddress: String,
         paymentMethod: String,
         cartItems: List<Pair<InventoryItemEntity, Double>>,
-        farmsMap: Map<Long, FarmEntity>
+        farmsMap: Map<Long, FarmEntity>,
+        deliveryDistrict: String = "",
+        deliveryPoliceStation: String = "",
+        deliveryLandmark: String = "",
+        customerNameOverride: String = customer.name,
+        customerPhoneOverride: String = customer.mobile,
+        paymentReference: String = "",
+        requireStructuredFields: Boolean = false
     ): Result<List<OrderEntity>> {
         if (cartItems.isEmpty()) return Result.failure(IllegalArgumentException("Cart is empty."))
-        if (deliveryAddress.isBlank()) return Result.failure(IllegalArgumentException("Delivery address is required."))
+        val cleanName = customerNameOverride.trim().ifBlank { customer.name.trim() }
+        val cleanPhone = customerPhoneOverride.trim().ifBlank { customer.mobile.trim() }
+        val cleanDistrict = deliveryDistrict.trim()
+        val cleanPoliceStation = deliveryPoliceStation.trim()
+        val cleanStreet = deliveryAddress.trim()
+        val cleanLandmark = deliveryLandmark.trim()
+        val cleanPaymentRef = paymentReference.trim()
+
+        if (cleanStreet.isBlank()) {
+            return Result.failure(IllegalArgumentException("Delivery address is required."))
+        }
+
+        val systemSettings = subAdminDao.observeSystemSettings().firstOrNull() ?: SystemSettingsEntity()
+        val anyOrderGatewayEnabled = systemSettings.orderShowBkash ||
+            systemSettings.orderShowNagad ||
+            systemSettings.orderShowBank ||
+            systemSettings.orderShowCod
+        if (!anyOrderGatewayEnabled) {
+            return Result.failure(IllegalStateException("All online order payment methods are currently turned off by Super Admin."))
+        }
+        val isMethodAllowed = when {
+            paymentMethod.contains("bkash", ignoreCase = true) -> systemSettings.orderShowBkash
+            paymentMethod.contains("nagad", ignoreCase = true) -> systemSettings.orderShowNagad
+            paymentMethod.contains("bank", ignoreCase = true) -> systemSettings.orderShowBank
+            paymentMethod.contains("cash", ignoreCase = true) || paymentMethod.contains("cod", ignoreCase = true) -> systemSettings.orderShowCod
+            else -> true
+        }
+        if (!isMethodAllowed) {
+            return Result.failure(IllegalStateException("$paymentMethod is currently turned off by Super Admin."))
+        }
+        if (requireStructuredFields) {
+            if (cleanName.isBlank()) {
+                return Result.failure(IllegalArgumentException("Recipient name is required."))
+            }
+            if (cleanPhone.isBlank()) {
+                return Result.failure(IllegalArgumentException("Customer phone number is required."))
+            }
+            if (cleanDistrict.isBlank()) {
+                return Result.failure(IllegalArgumentException("Delivery district is required."))
+            }
+            if (cleanPoliceStation.isBlank()) {
+                return Result.failure(IllegalArgumentException("Police station / Thana is required."))
+            }
+        }
+
+        val formattedAddress = if (cleanDistrict.isNotBlank() || cleanPoliceStation.isNotBlank()) {
+            buildString {
+                append(cleanStreet)
+                if (cleanPoliceStation.isNotBlank()) append(", PS: $cleanPoliceStation")
+                if (cleanDistrict.isNotBlank()) append(", District: $cleanDistrict")
+                if (cleanLandmark.isNotBlank()) append(" ($cleanLandmark)")
+            }
+        } else {
+            cleanStreet
+        }
 
         // Verify live stock and prices against the database so concurrent or stale carts cannot over-order
         val verifiedItems = mutableListOf<Pair<InventoryItemEntity, Double>>()
@@ -918,9 +1040,13 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             val order = OrderEntity(
                 orderNumber = orderNo,
                 customerUserId = customer.id,
-                customerName = customer.name,
-                customerPhone = customer.mobile,
-                deliveryAddress = deliveryAddress.trim(),
+                customerName = cleanName,
+                customerPhone = cleanPhone,
+                deliveryAddress = formattedAddress,
+                deliveryDistrict = cleanDistrict,
+                deliveryPoliceStation = cleanPoliceStation,
+                deliveryLandmark = cleanLandmark,
+                paymentReference = cleanPaymentRef,
                 farmId = farmId,
                 farmOwnerUserId = farmOwnerId,
                 farmName = farmName,
@@ -937,7 +1063,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                 AppNotificationEntity(
                     targetUserId = farmOwnerId,
                     title = "New Online Order $orderNo • $farmName",
-                    message = "${customer.name} (${customer.mobile}) ordered $summary for $farmName. Total: ${total.toInt()} BDT.",
+                    message = "$cleanName ($cleanPhone) ordered $summary for $farmName. Delivery: $formattedAddress. Total: ${total.toInt()} BDT.",
                     category = "ORDER"
                 )
             )
@@ -1038,7 +1164,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     }
 
     suspend fun saveEmployee(employee: EmployeeEntity, actorUserId: Long? = null): Long {
-        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireAnyActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE, AppPermission.STAFF_HR_MANAGE)
         requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
         return if (employee.id == 0L) {
             val newId = opsDao.insertEmployee(employee)
@@ -1061,12 +1187,12 @@ class FarmRepository(private val db: SmartFarmDatabase) {
     }
 
     suspend fun deleteEmployee(employee: EmployeeEntity, actorUserId: Long? = null) {
-        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireAnyActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE, AppPermission.STAFF_HR_MANAGE)
         opsDao.deleteEmployee(employee)
     }
 
     suspend fun markEmployeeAttendance(employee: EmployeeEntity, status: AttendanceStatus, actorUserId: Long? = null) {
-        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        requireAnyActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE, AppPermission.STAFF_HR_MANAGE)
         requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
         opsDao.updateEmployee(
             employee.copy(
@@ -1083,27 +1209,326 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         note: String,
         actorUserId: Long? = null
     ) {
-        requireActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE)
+        recordEmployeePayment(
+            employee = employee,
+            amount = amount,
+            paymentType = EmployeePaymentType.SALARY,
+            periodOrTitle = monthLabel,
+            note = note,
+            actorUserId = actorUserId
+        ).getOrThrow()
+    }
+
+    suspend fun recordEmployeePayment(
+        employee: EmployeeEntity,
+        amount: Double,
+        paymentType: EmployeePaymentType,
+        periodOrTitle: String,
+        note: String,
+        actorUserId: Long? = null
+    ): Result<Long> = runCatching {
+        requireAnyActorPermission(actorUserId, employee.ownerUserId, AppPermission.EMPLOYEES_MANAGE, AppPermission.STAFF_HR_MANAGE)
         requireActiveSubscription(employee.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
-        opsDao.insertSalaryPayment(
-            SalaryPaymentEntity(
-                employeeId = employee.id,
-                farmId = employee.farmId,
-                ownerUserId = employee.ownerUserId,
-                amount = amount,
-                monthLabel = monthLabel,
-                note = note
+        if (amount <= 0.0) throw IllegalArgumentException("Amount must be greater than 0.")
+        val cleanTitle = periodOrTitle.trim().ifBlank { paymentType.labelEn }
+        val cleanNote = note.trim()
+
+        val expCategory = when (paymentType) {
+            EmployeePaymentType.SALARY -> "Employee Salary"
+            EmployeePaymentType.BONUS -> "Employee Bonus"
+            EmployeePaymentType.EXPENSE -> "Employee Expense"
+            EmployeePaymentType.TARGET_REWARD -> "Employee Target Reward"
+        }
+
+        val paymentId = db.withTransaction {
+            val id = opsDao.insertSalaryPayment(
+                SalaryPaymentEntity(
+                    employeeId = employee.id,
+                    farmId = employee.farmId,
+                    ownerUserId = employee.ownerUserId,
+                    amount = amount,
+                    monthLabel = cleanTitle,
+                    note = cleanNote,
+                    paymentType = paymentType.key
+                )
             )
-        )
-        opsDao.insertExpense(
-            ExpenseEntity(
-                farmId = employee.farmId,
-                ownerUserId = employee.ownerUserId,
-                category = "Employee Salary",
-                amount = amount,
-                description = "Salary ($monthLabel) - ${employee.name}"
+            opsDao.insertExpense(
+                ExpenseEntity(
+                    farmId = employee.farmId,
+                    ownerUserId = employee.ownerUserId,
+                    category = expCategory,
+                    amount = amount,
+                    description = "${paymentType.labelEn} ($cleanTitle) - ${employee.name}" +
+                        if (cleanNote.isNotBlank()) " • $cleanNote" else ""
+                )
             )
+            employee.linkedUserId?.let { empUid ->
+                subAdminDao.insertNotification(
+                    AppNotificationEntity(
+                        targetUserId = empUid,
+                        title = "${paymentType.labelEn}: ${amount.toInt()} BDT",
+                        message = "Recorded $cleanTitle for ${employee.name}. $cleanNote".trim(),
+                        category = "STAFF_PAY"
+                    )
+                )
+            }
+            id
+        }
+        paymentId
+    }
+
+    suspend fun deleteSalaryPayment(payment: SalaryPaymentEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireAnyActorPermission(actorUserId, payment.ownerUserId, AppPermission.EMPLOYEES_MANAGE, AppPermission.STAFF_HR_MANAGE)
+        opsDao.deleteSalaryPayment(payment)
+    }
+
+    // --- Employee Morning-to-Night Task Targets & Automated Messaging ---
+    suspend fun saveEmployeeTaskTarget(
+        target: EmployeeTaskTargetEntity,
+        actorUserId: Long? = null
+    ): Result<Long> = runCatching {
+        requireAnyActorPermission(actorUserId, target.ownerUserId, AppPermission.STAFF_HR_MANAGE, AppPermission.EMPLOYEES_MANAGE)
+        requireActiveSubscription(target.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
+        val cleanTitle = target.title.trim()
+        if (cleanTitle.isBlank()) throw IllegalArgumentException("Target title is required.")
+        if (target.rewardBonusAmount < 0.0) throw IllegalArgumentException("Reward bonus cannot be negative.")
+        val employee = opsDao.getEmployeeById(target.employeeId)
+            ?: throw IllegalArgumentException("Selected employee was not found.")
+        val farm = farmDao.getFarmById(target.farmId)
+            ?: throw IllegalArgumentException("Selected farm was not found.")
+
+        val normalized = target.copy(
+            employeeName = employee.name,
+            title = cleanTitle,
+            description = target.description.trim(),
+            targetGoalText = target.targetGoalText.trim(),
+            completionNote = target.completionNote.trim()
         )
+        val actor = actorUserId?.let { userDao.getUserById(it) }
+        val slot = EmployeeTaskTimeSlot.fromKey(normalized.timeSlot)
+        val savedId = db.withTransaction {
+            val id = if (normalized.id == 0L) {
+                opsDao.insertTaskTarget(normalized)
+            } else {
+                opsDao.updateTaskTarget(normalized)
+                normalized.id
+            }
+            if (target.id == 0L) {
+                opsDao.insertAutoMessage(
+                    EmployeeAutoMessageEntity(
+                        ownerUserId = normalized.ownerUserId,
+                        farmId = normalized.farmId,
+                        employeeId = employee.id,
+                        senderUserId = actor?.id ?: normalized.ownerUserId,
+                        senderName = actor?.name ?: "Farm Admin",
+                        senderRole = actor?.role ?: UserRole.FARMER.name,
+                        recipientLabel = employee.name,
+                        messageType = AutoMessageType.TASK_ASSIGNED.key,
+                        subject = "New Target (${slot.labelEn}): $cleanTitle",
+                        messageBody = "Farm: ${farm.name} • Goal: ${normalized.targetGoalText.ifBlank { cleanTitle }} • Bonus on completion: ${normalized.rewardBonusAmount.toInt()} BDT.",
+                        isAutoGenerated = true
+                    )
+                )
+                subAdminDao.insertNotification(
+                    AppNotificationEntity(
+                        targetUserId = employee.linkedUserId ?: normalized.ownerUserId,
+                        title = "New Target for ${employee.name} (+${normalized.rewardBonusAmount.toInt()} BDT)",
+                        message = "${slot.labelEn}: $cleanTitle (${farm.name})",
+                        category = "TARGET"
+                    )
+                )
+            }
+            id
+        }
+        savedId
+    }
+
+    suspend fun updateEmployeeTaskTargetStatus(
+        target: EmployeeTaskTargetEntity,
+        newStatus: EmployeeTaskStatus,
+        completionNote: String = "",
+        actorUserId: Long? = null
+    ): Result<Boolean> = runCatching {
+        val emp = opsDao.getEmployeeById(target.employeeId)
+            ?: throw IllegalArgumentException("Employee not found.")
+        val isLinkedEmployeeActor = actorUserId != null && emp.linkedUserId == actorUserId
+        if (isLinkedEmployeeActor) {
+            requireAnyActorPermission(
+                actorUserId,
+                target.ownerUserId,
+                AppPermission.STAFF_TARGETS_VIEW,
+                AppPermission.STAFF_HR_MANAGE,
+                AppPermission.EMPLOYEES_MANAGE
+            )
+        } else {
+            requireAnyActorPermission(
+                actorUserId,
+                target.ownerUserId,
+                AppPermission.STAFF_HR_MANAGE,
+                AppPermission.EMPLOYEES_MANAGE
+            )
+        }
+        requireActiveSubscription(target.ownerUserId, actorUserId, SubscriptionFeature.EMPLOYEES_PERMISSIONS)
+
+        val actor = actorUserId?.let { userDao.getUserById(it) }
+        val cleanNote = completionNote.trim()
+        val now = System.currentTimeMillis()
+        val slot = EmployeeTaskTimeSlot.fromKey(target.timeSlot)
+
+        db.withTransaction {
+            val live = opsDao.getTaskTargetById(target.id) ?: target
+            val shouldCreditBonus = newStatus == EmployeeTaskStatus.COMPLETED &&
+                !live.rewardCredited &&
+                live.rewardBonusAmount > 0.0
+
+            val updated = live.copy(
+                status = newStatus.key,
+                rewardCredited = live.rewardCredited || shouldCreditBonus,
+                completionNote = cleanNote.ifBlank { live.completionNote },
+                completedAt = if (newStatus == EmployeeTaskStatus.COMPLETED) (live.completedAt ?: now) else null
+            )
+            opsDao.updateTaskTarget(updated)
+
+            if (shouldCreditBonus) {
+                opsDao.insertSalaryPayment(
+                    SalaryPaymentEntity(
+                        employeeId = emp.id,
+                        farmId = live.farmId,
+                        ownerUserId = live.ownerUserId,
+                        amount = live.rewardBonusAmount,
+                        monthLabel = "${slot.labelEn} Target",
+                        paymentDate = now,
+                        note = "Completed: ${live.title}" + if (cleanNote.isNotBlank()) " ($cleanNote)" else "",
+                        paymentType = EmployeePaymentType.TARGET_REWARD.key
+                    )
+                )
+                opsDao.insertExpense(
+                    ExpenseEntity(
+                        farmId = live.farmId,
+                        ownerUserId = live.ownerUserId,
+                        category = "Employee Target Reward",
+                        amount = live.rewardBonusAmount,
+                        description = "Target Reward (${live.title}) - ${emp.name}",
+                        expenseDate = now
+                    )
+                )
+            }
+
+            if (newStatus == EmployeeTaskStatus.COMPLETED && live.status != EmployeeTaskStatus.COMPLETED.key) {
+                val rewardText = if (live.rewardBonusAmount > 0.0) {
+                    " Bonus credited: ${live.rewardBonusAmount.toInt()} BDT."
+                } else {
+                    ""
+                }
+                opsDao.insertAutoMessage(
+                    EmployeeAutoMessageEntity(
+                        ownerUserId = live.ownerUserId,
+                        farmId = live.farmId,
+                        employeeId = emp.id,
+                        senderUserId = actor?.id ?: (emp.linkedUserId ?: live.ownerUserId),
+                        senderName = actor?.name ?: emp.name,
+                        senderRole = actor?.role ?: UserRole.EMPLOYEE.name,
+                        recipientLabel = "Farm Owner",
+                        messageType = AutoMessageType.TASK_COMPLETED.key,
+                        subject = "Target Completed (${slot.labelEn}): ${live.title}",
+                        messageBody = "${emp.name} completed '${live.title}'.${if (cleanNote.isNotBlank()) " Note: $cleanNote." else ""}$rewardText",
+                        isAutoGenerated = true,
+                        sentAt = now
+                    )
+                )
+                subAdminDao.insertNotification(
+                    AppNotificationEntity(
+                        targetUserId = live.ownerUserId,
+                        title = "Target Completed: ${emp.name}",
+                        message = "${live.title} marked completed.$rewardText",
+                        category = "TARGET"
+                    )
+                )
+                if (emp.linkedUserId != null && actorUserId != emp.linkedUserId && shouldCreditBonus) {
+                    subAdminDao.insertNotification(
+                        AppNotificationEntity(
+                            targetUserId = emp.linkedUserId,
+                            title = "Bonus Earned: +${live.rewardBonusAmount.toInt()} BDT",
+                            message = "Your target '${live.title}' was completed and ${live.rewardBonusAmount.toInt()} BDT was added.",
+                            category = "TARGET"
+                        )
+                    )
+                }
+            }
+            shouldCreditBonus
+        }
+    }
+
+    suspend fun deleteEmployeeTaskTarget(target: EmployeeTaskTargetEntity, actorUserId: Long? = null): Result<Unit> = runCatching {
+        requireAnyActorPermission(actorUserId, target.ownerUserId, AppPermission.STAFF_HR_MANAGE, AppPermission.EMPLOYEES_MANAGE)
+        opsDao.deleteTaskTarget(target)
+    }
+
+    suspend fun sendEmployeeAutoMessage(
+        ownerUserId: Long,
+        farmId: Long,
+        employeeId: Long,
+        messageType: AutoMessageType,
+        subject: String,
+        body: String,
+        actorUserId: Long,
+        isAutoGenerated: Boolean = true
+    ): Result<Long> = runCatching {
+        val actor = userDao.getUserById(actorUserId)
+            ?: throw SecurityException("Please sign in to send automated messages.")
+        val emp = opsDao.getEmployeeById(employeeId)
+            ?: throw IllegalArgumentException("Please select an employee.")
+        if (emp.ownerUserId != ownerUserId) {
+            throw SecurityException("Employee does not belong to this farm account.")
+        }
+        val authorized = actor.role == UserRole.SUPER_ADMIN.name ||
+            (actor.role == UserRole.FARMER.name && actor.id == ownerUserId) ||
+            (actor.role == UserRole.EMPLOYEE.name && actor.employerOwnerId == ownerUserId)
+        if (!authorized) {
+            throw SecurityException("Access Denied.")
+        }
+        val cleanSubject = subject.trim().ifBlank { messageType.labelEn }
+        val cleanBody = body.trim()
+        if (cleanBody.isBlank()) throw IllegalArgumentException("Message text cannot be empty.")
+
+        val ownerUser = userDao.getUserById(ownerUserId)
+        val recipientLabel = if (actor.role == UserRole.EMPLOYEE.name) {
+            ownerUser?.name ?: "Farm Owner"
+        } else {
+            emp.name
+        }
+        val notifTargetId = if (actor.role == UserRole.EMPLOYEE.name) {
+            ownerUserId
+        } else {
+            emp.linkedUserId ?: ownerUserId
+        }
+
+        db.withTransaction {
+            val id = opsDao.insertAutoMessage(
+                EmployeeAutoMessageEntity(
+                    ownerUserId = ownerUserId,
+                    farmId = farmId.takeIf { it > 0L } ?: emp.farmId,
+                    employeeId = emp.id,
+                    senderUserId = actor.id,
+                    senderName = actor.name,
+                    senderRole = actor.role,
+                    recipientLabel = recipientLabel,
+                    messageType = messageType.key,
+                    subject = cleanSubject,
+                    messageBody = cleanBody,
+                    isAutoGenerated = isAutoGenerated
+                )
+            )
+            subAdminDao.insertNotification(
+                AppNotificationEntity(
+                    targetUserId = notifTargetId,
+                    title = "Auto Message: $cleanSubject",
+                    message = "${actor.name}: $cleanBody",
+                    category = "STAFF_MESSAGE"
+                )
+            )
+            id
+        }
     }
 
     // --- Admin-Only User Permissions & Employee Login Management ---
@@ -1379,8 +1804,12 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         entity.copy(id = id)
     }
 
-    suspend fun markNotificationsRead(userId: Long): Result<Unit> = runCatching {
-        subAdminDao.markAllRead(userId)
+    suspend fun markNotificationsRead(userId: Long, ownerId: Long = userId): Result<Unit> = runCatching {
+        if (ownerId == userId) {
+            subAdminDao.markAllRead(userId)
+        } else {
+            subAdminDao.markAllReadForUserOrOwner(userId, ownerId)
+        }
     }
 
     suspend fun submitSupportRequest(user: UserEntity, subject: String, message: String): Result<Unit> = runCatching {
@@ -1540,7 +1969,7 @@ class FarmRepository(private val db: SmartFarmDatabase) {
                 actorName = admin.name,
                 action = "SETTINGS_UPDATED",
                 target = "System Settings",
-                details = "Maintenance=${settings.maintenanceMode}, DevPhone=${settings.developerPhone}, DevWA=${settings.developerWhatsApp}, bKash=${settings.bkashNumber}"
+                details = "Maintenance=${settings.maintenanceMode}, Cust=${settings.loginShowCustomerLogin}, Farmer=${settings.loginShowFarmerLogin}, Emp=${settings.loginShowEmployeeLogin}, Demos=(C:${settings.loginShowCustomerDemo},F:${settings.loginShowFarmerDemo},E:${settings.loginShowEmployeeDemo}), OrderPay=(bKash:${settings.orderShowBkash},Nagad:${settings.orderShowNagad},Bank:${settings.orderShowBank},COD:${settings.orderShowCod},Override:${settings.orderOverrideSellerPayments})"
             )
         )
     }
@@ -1735,6 +2164,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
             animalDao.deleteCustomCategoriesByOwner(targetUser.id)
             permissionDao.deletePermissionsByOwner(targetUser.id)
             permissionDao.deleteCustomOptionsByOwner(targetUser.id)
+            opsDao.deleteTaskTargetsByOwner(targetUser.id)
+            opsDao.deleteAutoMessagesByOwner(targetUser.id)
+            opsDao.deleteSalaryPaymentsByOwner(targetUser.id)
             subAdminDao.deleteSubscriptionsByUser(targetUser.id)
             subAdminDao.deleteNotificationsForUser(targetUser.id)
             subAdminDao.deleteSupportByUser(targetUser.id)

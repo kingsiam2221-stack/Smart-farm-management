@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -36,6 +38,7 @@ import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FarmSwitcherBar
 import com.example.ui.components.FeaturePlanBadge
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.components.SubscriptionRequiredLockCard
 import com.example.ui.components.formatShortDate
 import com.example.ui.components.safeLaunchImagePicker
@@ -51,6 +54,7 @@ fun OnlineProductsScreen(
     state: FarmerDashboardState,
     strings: AppStrings,
     currency: CurrencyOption,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     openAddOnEntry: Boolean = false,
     onAddEntryConsumed: () -> Unit = {},
     onSelectFarm: (Long?) -> Unit,
@@ -549,6 +553,21 @@ fun OnlineProductsScreen(
                                                 color = if (margin >= 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
                                             )
                                         }
+                                        val effBkash = item.sellerBkashNumber.ifBlank { farm?.bkashNumber.orEmpty() }
+                                        val effNagad = item.sellerNagadNumber.ifBlank { farm?.nagadNumber.orEmpty() }
+                                        val effBank = item.sellerBankAccount.ifBlank { farm?.bankAccountInfo.orEmpty() }
+                                        val paySummary = buildList {
+                                            if (effBkash.isNotBlank()) add("bKash: $effBkash")
+                                            if (effNagad.isNotBlank()) add("Nagad: $effNagad")
+                                            if (effBank.isNotBlank()) add("Bank: $effBank")
+                                        }.joinToString(" • ")
+                                        if (paySummary.isNotBlank()) {
+                                            Text(
+                                                paySummary,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
                                         Text(
                                             "${tr("Updated", "আপডেট")}: ${formatShortDate(item.updatedAt)}",
                                             style = MaterialTheme.typography.labelSmall,
@@ -608,6 +627,7 @@ fun OnlineProductsScreen(
             defaultFarmId = state.selectedFarmId ?: state.farms.first().id,
             currency = currency,
             strings = strings,
+            systemSettings = systemSettings,
             onDismiss = { showProductDialog = false; editingProduct = null },
             onSave = { saved ->
                 onSaveOnlineProduct(saved)
@@ -653,6 +673,7 @@ private fun OnlineProductEditorDialog(
     defaultFarmId: Long,
     currency: CurrencyOption,
     strings: AppStrings,
+    systemSettings: SystemSettingsEntity = SystemSettingsEntity(),
     onDismiss: () -> Unit,
     onSave: (InventoryItemEntity) -> Unit
 ) {
@@ -690,9 +711,27 @@ private fun OnlineProductEditorDialog(
     }
     var supplierName by remember(existing?.id) { mutableStateOf(existing?.supplierName ?: "") }
     var supplierPhone by remember(existing?.id) { mutableStateOf(existing?.supplierPhone ?: "") }
+    val defaultFarmObj = remember(farmId, farms) { farms.firstOrNull { it.id == farmId } }
+    var sellerBkash by remember(existing?.id) {
+        mutableStateOf(existing?.sellerBkashNumber?.ifBlank { defaultFarmObj?.bkashNumber ?: "" } ?: defaultFarmObj?.bkashNumber.orEmpty())
+    }
+    var sellerNagad by remember(existing?.id) {
+        mutableStateOf(existing?.sellerNagadNumber?.ifBlank { defaultFarmObj?.nagadNumber ?: "" } ?: defaultFarmObj?.nagadNumber.orEmpty())
+    }
+    var sellerBank by remember(existing?.id) {
+        mutableStateOf(existing?.sellerBankAccount?.ifBlank { defaultFarmObj?.bankAccountInfo ?: "" } ?: defaultFarmObj?.bankAccountInfo.orEmpty())
+    }
     var description by remember(existing?.id) { mutableStateOf(existing?.description ?: "") }
     var imageUri by remember(existing?.id) { mutableStateOf(existing?.imageUri) }
     var listLive by remember(existing?.id) { mutableStateOf(existing?.listInMarketplace ?: true) }
+
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+    val safeDismiss = {
+        textToolbar.hide()
+        focusManager.clearFocus(force = true)
+        onDismiss()
+    }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) imageUri = uri.toString()
@@ -704,7 +743,7 @@ private fun OnlineProductEditorDialog(
     val canSave = name.isNotBlank() && effectiveCategory.isNotBlank() && parsedPrice > 0.0 && parsedQty >= 0.0 && farmId > 0L
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = safeDismiss,
         title = {
             Text(
                 if (existing == null) tr("Add Online Product", "নতুন অনলাইন পণ্য যোগ করুন")
@@ -712,27 +751,33 @@ private fun OnlineProductEditorDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Target Farm Account Selection (Orders & Alerts route to this Farm)
-                Text(tr("Selling Farm / Business *", "বিক্রয়কারী খামার / ব্যবসা *"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+            ProvideSafeTextToolbar {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    farms.forEach { farm ->
-                        FilterChip(
-                            selected = farmId == farm.id,
-                            onClick = { farmId = farm.id },
-                            label = { Text("${farm.name} (${farm.farmCode})") }
-                        )
+                    // Target Farm Account Selection (Orders & Alerts route to this Farm)
+                    Text(tr("Selling Farm / Business *", "বিক্রয়কারী খামার / ব্যবসা *"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farms.forEach { farm ->
+                            FilterChip(
+                                selected = farmId == farm.id,
+                                onClick = {
+                                    farmId = farm.id
+                                    if (sellerBkash.isBlank()) sellerBkash = farm.bkashNumber
+                                    if (sellerNagad.isBlank()) sellerNagad = farm.nagadNumber
+                                    if (sellerBank.isBlank()) sellerBank = farm.bankAccountInfo
+                                },
+                                label = { Text("${farm.name} (${farm.farmCode})") }
+                            )
+                        }
                     }
-                }
 
                 // Business Sourcing Model: Own Harvest vs Bought & Resold
                 Text(tr("Business Sourcing Type *", "পণ্যের উৎস ও ব্যবসার ধরন *"), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -895,6 +940,50 @@ private fun OnlineProductEditorDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                if (systemSettings.orderShowBkash || systemSettings.orderShowNagad || systemSettings.orderShowBank) {
+                    Text(
+                        tr("Receiving Accounts for Customer Payments", "ক্রেতার পেমেন্ট গ্রহণের অ্যাকাউন্ট"),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (systemSettings.orderShowBkash) {
+                        OutlinedTextField(
+                            value = sellerBkash,
+                            onValueChange = { sellerBkash = it },
+                            label = { Text(tr("bKash Number (Personal / Merchant)", "বিকাশ নম্বর")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("online_product_bkash_input")
+                        )
+                    }
+                    if (systemSettings.orderShowNagad) {
+                        OutlinedTextField(
+                            value = sellerNagad,
+                            onValueChange = { sellerNagad = it },
+                            label = { Text(tr("Nagad Number", "নগদ নম্বর")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("online_product_nagad_input")
+                        )
+                    }
+                    if (systemSettings.orderShowBank) {
+                        OutlinedTextField(
+                            value = sellerBank,
+                            onValueChange = { sellerBank = it },
+                            label = { Text(tr("Bank Account Number & Bank Name", "ব্যাংক অ্যাকাউন্ট নম্বর ও ব্যাংকের নাম")) },
+                            placeholder = { Text(tr("e.g. Islami Bank A/C 2050..., Branch", "যেমন: ইসলামী ব্যাংক A/C ২০৫০..., শাখা")) },
+                            modifier = Modifier.fillMaxWidth().testTag("online_product_bank_input")
+                        )
+                    }
+                } else {
+                    Text(
+                        tr("bKash, Nagad, and Bank payment fields are currently turned off by Super Admin.", "বিকাশ, নগদ ও ব্যাংক নম্বর অপশন সুপার অ্যাডমিন বন্ধ রেখেছেন।"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
@@ -927,12 +1016,15 @@ private fun OnlineProductEditorDialog(
                         )
                     }
                 }
+                }
             }
         },
         confirmButton = {
             Button(
                 enabled = canSave,
                 onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     val item = (existing ?: InventoryItemEntity(
                         farmId = farmId,
                         ownerUserId = 0L,
@@ -952,7 +1044,10 @@ private fun OnlineProductEditorDialog(
                         listInMarketplace = listLive,
                         description = description.trim(),
                         imageUri = imageUri,
-                        sourcingType = sourcingType
+                        sourcingType = sourcingType,
+                        sellerBkashNumber = sellerBkash.trim(),
+                        sellerNagadNumber = sellerNagad.trim(),
+                        sellerBankAccount = sellerBank.trim()
                     )
                     onSave(item)
                 },
@@ -962,7 +1057,7 @@ private fun OnlineProductEditorDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(strings.cancel) }
+            TextButton(onClick = safeDismiss) { Text(strings.cancel) }
         }
     )
 }

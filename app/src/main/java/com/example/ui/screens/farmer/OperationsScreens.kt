@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -29,13 +31,21 @@ import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FarmSwitcherBar
 import com.example.ui.components.FeaturePlanBadge
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.components.SubscriptionRequiredLockCard
 import com.example.ui.components.formatShortDate
 import com.example.ui.state.FarmerDashboardState
 
 enum class OperationsTab {
-    INVENTORY, EXPENSES, EMPLOYEES
+    INVENTORY, EXPENSES
 }
+
+private val EMPLOYEE_PAY_EXPENSE_CATEGORIES = setOf(
+    "Employee Salary",
+    "Employee Bonus",
+    "Employee Expense",
+    "Employee Target Reward"
+)
 
 @Composable
 fun OperationsScreen(
@@ -49,18 +59,13 @@ fun OperationsScreen(
     onDeleteInventory: (InventoryItemEntity) -> Unit,
     onAddExpense: (Long, String, Double, String) -> Unit,
     onDeleteExpense: (ExpenseEntity) -> Unit,
-    onSaveEmployee: (EmployeeEntity) -> Unit,
-    onDeleteEmployee: (EmployeeEntity) -> Unit,
-    onMarkAttendance: (EmployeeEntity, AttendanceStatus) -> Unit,
-    onPaySalary: (EmployeeEntity, Double, String, String) -> Unit,
-    onOpenPermissions: () -> Unit = {},
+    onOpenStaffHr: () -> Unit = {},
     onOpenSubscription: () -> Unit = {}
 ) {
     val visibleTabs = remember(state.accessPolicy) {
         buildList {
             if (state.accessPolicy.has(AppPermission.INVENTORY_VIEW)) add(OperationsTab.INVENTORY)
             if (state.accessPolicy.has(AppPermission.EXPENSES_VIEW)) add(OperationsTab.EXPENSES)
-            if (state.accessPolicy.has(AppPermission.EMPLOYEES_VIEW)) add(OperationsTab.EMPLOYEES)
         }
     }
 
@@ -75,8 +80,8 @@ fun OperationsScreen(
                 icon = Icons.Default.Lock,
                 title = tr("Operations Access Restricted", "পরিচালনা অপশনের অনুমতি নেই"),
                 subtitle = tr(
-                    "Ask your Farm Admin to grant Inventory, Expense, or Employee access.",
-                    "মজুদ, খরচ বা কর্মচারী অপশন দেখতে অ্যাডমিনের কাছ থেকে অনুমতি নিন।"
+                    "Ask your Farm Admin to grant Inventory or General Expense access.",
+                    "মজুদ বা সাধারণ খরচ অপশন দেখতে অ্যাডমিনের কাছ থেকে অনুমতি নিন।"
                 )
             )
         }
@@ -95,8 +100,7 @@ fun OperationsScreen(
             visibleTabs.forEach { tab ->
                 val title = when (tab) {
                     OperationsTab.INVENTORY -> tr("Inventory", "মজুদ / ইনভেন্টরি")
-                    OperationsTab.EXPENSES -> tr("Expenses", "খরচ")
-                    OperationsTab.EMPLOYEES -> tr("Employees", "কর্মচারী")
+                    OperationsTab.EXPENSES -> tr("Expenses", "সাধারণ খরচ")
                 }
                 Tab(
                     selected = selectedTab == tab,
@@ -124,19 +128,7 @@ fun OperationsScreen(
                     }
                 } else {
                     ExpensesTab(
-                        state, strings, currency, onSelectFarm, onAddExpense, onDeleteExpense
-                    )
-                }
-            }
-            OperationsTab.EMPLOYEES -> {
-                if (!subPolicy.canAccess(SubscriptionFeature.EMPLOYEES_PERMISSIONS)) {
-                    Box(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-                        SubscriptionRequiredLockCard(SubscriptionFeature.EMPLOYEES_PERMISSIONS, onOpenSubscription, canSubscribe)
-                    }
-                } else {
-                    EmployeesTab(
-                        state, strings, currency, onSelectFarm, onSaveEmployee, onDeleteEmployee,
-                        onMarkAttendance, onPaySalary, onOpenPermissions
+                        state, strings, currency, onSelectFarm, onAddExpense, onDeleteExpense, onOpenStaffHr
                     )
                 }
             }
@@ -339,48 +331,64 @@ private fun InventoryTab(
         var supplier by remember(item.id, isStockIn) { mutableStateOf(item.supplierName) }
         var note by remember(item.id, isStockIn) { mutableStateOf("") }
 
+        val focusManager = LocalFocusManager.current
+        val textToolbar = LocalTextToolbar.current
         AlertDialog(
-            onDismissRequest = { adjustTarget = null },
+            onDismissRequest = {
+                textToolbar.hide()
+                focusManager.clearFocus(force = true)
+                adjustTarget = null
+            },
             title = { Text("${if (isStockIn) tr("Stock In", "স্টক যোগ") else tr("Stock Out", "স্টক কমান")}: ${item.name}") },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = qtyText,
-                        onValueChange = { qtyText = it },
-                        label = { Text("${tr("Quantity", "পরিমাণ")} (${item.unit})") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
-                    )
-                    if (isStockIn) {
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         OutlinedTextField(
-                            value = costText,
-                            onValueChange = { costText = it },
-                            label = { Text("${tr("Unit Cost", "একক খরচ")} (${currency.symbol})") },
+                            value = qtyText,
+                            onValueChange = { qtyText = it },
+                            label = { Text("${tr("Quantity", "পরিমাণ")} (${item.unit})") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true
                         )
-                        OutlinedTextField(
-                            value = supplier,
-                            onValueChange = { supplier = it },
-                            label = { Text(tr("Supplier Name", "সরবরাহকারীর নাম")) },
-                            singleLine = true
-                        )
+                        if (isStockIn) {
+                            OutlinedTextField(
+                                value = costText,
+                                onValueChange = { costText = it },
+                                label = { Text("${tr("Unit Cost", "একক খরচ")} (${currency.symbol})") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = supplier,
+                                onValueChange = { supplier = it },
+                                label = { Text(tr("Supplier Name", "সরবরাহকারীর নাম")) },
+                                singleLine = true
+                            )
+                        }
+                        OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text(tr("Note", "নোট")) })
                     }
-                    OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text(tr("Note", "নোট")) })
                 }
             },
             confirmButton = {
                 Button(onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     val delta = qtyText.toDoubleOrNull() ?: 0.0
                     val baseCost = CurrencyFormatter.toBaseBdt(costText.toDoubleOrNull() ?: 0.0, currency)
                     if (delta > 0) onAdjustInventory(item, delta, isStockIn, baseCost, supplier, note)
                     adjustTarget = null
                 }) { Text(strings.save) }
             },
-            dismissButton = { TextButton(onClick = { adjustTarget = null }) { Text(strings.cancel) } }
+            dismissButton = {
+                TextButton(onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
+                    adjustTarget = null
+                }) { Text(strings.cancel) }
+            }
         )
     }
 }
@@ -408,60 +416,70 @@ private fun AddInventoryDialog(
     var listOnline by remember { mutableStateOf(false) }
     var desc by remember { mutableStateOf("") }
 
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+    val safeDismiss = {
+        textToolbar.hide()
+        focusManager.clearFocus(force = true)
+        onDismiss()
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = safeDismiss,
         title = { Text(tr("Add Inventory Item", "মজুদ পণ্য যোগ করুন")) },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 430.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+            ProvideSafeTextToolbar {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 430.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    farms.forEach { f ->
-                        FilterChip(
-                            selected = selectedFarmId == f.id,
-                            onClick = { selectedFarmId = f.id },
-                            label = { Text(f.name) }
-                        )
+                    Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        farms.forEach { f ->
+                            FilterChip(
+                                selected = selectedFarmId == f.id,
+                                onClick = { selectedFarmId = f.id },
+                                label = { Text(f.name) }
+                            )
+                        }
                     }
-                }
-                Text(tr("Category", "ধরন"), style = MaterialTheme.typography.labelLarge)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    cats.forEach { c ->
-                        FilterChip(
-                            selected = category == c,
-                            onClick = { category = c },
-                            label = { Text(DomainLocalization.productCategory(c, isBn)) }
-                        )
+                    Text(tr("Category", "ধরন"), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        cats.forEach { c ->
+                            FilterChip(
+                                selected = category == c,
+                                onClick = { category = c },
+                                label = { Text(DomainLocalization.productCategory(c, isBn)) }
+                            )
+                        }
                     }
-                }
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Item Name *", "পণ্যের নাম *")) }, singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = qtyText, onValueChange = { qtyText = it }, label = { Text(tr("Qty", "পরিমাণ")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text(tr("Unit", "একক")) }, modifier = Modifier.weight(1f), singleLine = true)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = costText, onValueChange = { costText = it }, label = { Text("${tr("Unit Cost", "একক খরচ")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = thresholdText, onValueChange = { thresholdText = it }, label = { Text(tr("Low Alert", "কম সতর্কতা")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
-                }
-                OutlinedTextField(value = supplier, onValueChange = { supplier = it }, label = { Text(tr("Supplier Name", "সরবরাহকারীর নাম")) }, singleLine = true)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = listOnline, onCheckedChange = { listOnline = it })
-                    Text(tr("List in Customer Online Shop", "গ্রাহকের অনলাইন দোকানে যুক্ত করুন"))
-                }
-                if (listOnline) {
-                    OutlinedTextField(value = sellText, onValueChange = { sellText = it }, label = { Text("${tr("Online Price", "অনলাইন মূল্য")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Product Description", "পণ্যের বিবরণ")) })
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Item Name *", "পণ্যের নাম *")) }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = qtyText, onValueChange = { qtyText = it }, label = { Text(tr("Qty", "পরিমাণ")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text(tr("Unit", "একক")) }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = costText, onValueChange = { costText = it }, label = { Text("${tr("Unit Cost", "একক খরচ")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = thresholdText, onValueChange = { thresholdText = it }, label = { Text(tr("Low Alert", "কম সতর্কতা")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                    OutlinedTextField(value = supplier, onValueChange = { supplier = it }, label = { Text(tr("Supplier Name", "সরবরাহকারীর নাম")) }, singleLine = true)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = listOnline, onCheckedChange = { listOnline = it })
+                        Text(tr("List in Customer Online Shop", "গ্রাহকের অনলাইন দোকানে যুক্ত করুন"))
+                    }
+                    if (listOnline) {
+                        OutlinedTextField(value = sellText, onValueChange = { sellText = it }, label = { Text("${tr("Online Price", "অনলাইন মূল্য")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Product Description", "পণ্যের বিবরণ")) })
+                    }
                 }
             }
         },
@@ -469,6 +487,8 @@ private fun AddInventoryDialog(
             Button(
                 enabled = farms.isNotEmpty() && selectedFarmId > 0L && name.isNotBlank(),
                 onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     onSave(
                         InventoryItemEntity(
                             farmId = selectedFarmId,
@@ -488,7 +508,7 @@ private fun AddInventoryDialog(
                 }
             ) { Text(tr("Save Item", "সংরক্ষণ করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
+        dismissButton = { TextButton(onClick = safeDismiss) { Text(tr("Cancel", "বাতিল")) } }
     )
 }
 
@@ -500,7 +520,8 @@ private fun ExpensesTab(
     currency: CurrencyOption,
     onSelectFarm: (Long?) -> Unit,
     onAddExpense: (Long, String, Double, String) -> Unit,
-    onDeleteExpense: (ExpenseEntity) -> Unit
+    onDeleteExpense: (ExpenseEntity) -> Unit,
+    onOpenStaffHr: () -> Unit
 ) {
     val isBn = isBangla()
     val canManage = state.accessPolicy.has(AppPermission.EXPENSES_MANAGE)
@@ -516,7 +537,11 @@ private fun ExpensesTab(
         else -> 0L
     }
     val filtered = remember(state.expenses, state.selectedFarmId, cutoff) {
-        state.expenses.filter { (state.selectedFarmId == null || it.farmId == state.selectedFarmId) && it.expenseDate >= cutoff }
+        state.expenses.filter {
+            (state.selectedFarmId == null || it.farmId == state.selectedFarmId) &&
+                it.expenseDate >= cutoff &&
+                it.category !in EMPLOYEE_PAY_EXPENSE_CATEGORIES
+        }
     }
     val farmsMap = remember(state.farms) { state.farms.associateBy { it.id } }
 
@@ -542,13 +567,27 @@ private fun ExpensesTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(tr("Expenses", "খরচ"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(tr("General Farm Expenses", "সাধারণ খামার খরচ"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     FeaturePlanBadge(
                         isFree = state.subscriptionPolicy.isFree(SubscriptionFeature.INVENTORY_EXPENSES),
                         hasActiveSub = state.subscriptionPolicy.hasActiveSubscription
                     )
                 }
                 FarmSwitcherBar(state.farms, state.selectedFarmId, strings.allFarms, onSelectFarm)
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = onOpenStaffHr,
+                    modifier = Modifier.fillMaxWidth().testTag("expenses_open_staff_hr_button")
+                ) {
+                    Icon(Icons.Default.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        tr(
+                            "Employee Salary, Bonus & Staff Expenses → Open Staff HR",
+                            "কর্মচারী বেতন, বোনাস ও স্টাফ খরচ আলাদা অপশনে দেখুন →"
+                        )
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(listOf("All", "Daily", "Weekly", "Monthly", "Yearly")) { p ->
@@ -569,10 +608,10 @@ private fun ExpensesTab(
                 item(key = "exp_empty") {
                     EmptyStateCard(
                         icon = Icons.Default.ReceiptLong,
-                        title = tr("No Expenses", "কোনো খরচের হিসাব নেই"),
+                        title = tr("No General Expenses", "কোনো সাধারণ খরচের হিসাব নেই"),
                         subtitle = tr(
-                            "Track feed, medicine, salary, electricity, equipment, and more.",
-                            "খাদ্য, ওষুধ, বেতন, বিদ্যুৎ, সরঞ্জাম ও অন্যান্য খরচের হিসাব রাখুন।"
+                            "Track feed, medicine, electricity, equipment, and maintenance here. Employee salary & bonuses live in Staff, Pay & Targets.",
+                            "খাদ্য, ওষুধ, বিদ্যুৎ, সরঞ্জাম ও রক্ষণাবেক্ষণ খরচ এখানে লিখুন। কর্মচারীর বেতন-বোনাস 'কর্মচারী, বেতন ও টার্গেট' অপশনে আছে।"
                         ),
                         actionLabel = if (canManage) strings.addExpense else null,
                         onAction = if (canManage) ({ showAdd = true }) else null
@@ -604,279 +643,68 @@ private fun ExpensesTab(
     }
 
     if (showAdd) {
-        val expCats = listOf("Animal Purchase", "Bird Purchase", "Food & Feed", "Medicine", "Vaccination", "Employee Salary", "Electricity", "Water", "Transportation", "Equipment", "Maintenance", "Other")
+        val expCats = listOf("Animal Purchase", "Bird Purchase", "Food & Feed", "Medicine", "Vaccination", "Electricity", "Water", "Transportation", "Equipment", "Maintenance", "Other")
         var farmId by remember { mutableStateOf(state.selectedFarmId ?: state.farms.firstOrNull()?.id ?: 0L) }
         var cat by remember { mutableStateOf("Food & Feed") }
         var amountText by remember { mutableStateOf("") }
         var desc by remember { mutableStateOf("") }
+        val focusManager = LocalFocusManager.current
+        val textToolbar = LocalTextToolbar.current
 
         AlertDialog(
-            onDismissRequest = { showAdd = false },
+            onDismissRequest = {
+                textToolbar.hide()
+                focusManager.clearFocus(force = true)
+                showAdd = false
+            },
             title = { Text(strings.addExpense) },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        state.farms.forEach { f ->
-                            FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) })
+                        Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            state.farms.forEach { f ->
+                                FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) })
+                            }
                         }
-                    }
-                    Text(tr("Expense Category", "খরচের খাত"), style = MaterialTheme.typography.labelLarge)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        expCats.forEach { c ->
-                            FilterChip(selected = cat == c, onClick = { cat = c }, label = { Text(DomainLocalization.expenseCategory(c, isBn)) })
+                        Text(tr("Expense Category", "খরচের খাত"), style = MaterialTheme.typography.labelLarge)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            expCats.forEach { c ->
+                                FilterChip(selected = cat == c, onClick = { cat = c }, label = { Text(DomainLocalization.expenseCategory(c, isBn)) })
+                            }
                         }
+                        OutlinedTextField(value = amountText, onValueChange = { amountText = it }, label = { Text("${tr("Amount", "টাকার পরিমাণ")} (${currency.symbol}) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                        OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Description", "বিবরণ")) })
                     }
-                    OutlinedTextField(value = amountText, onValueChange = { amountText = it }, label = { Text("${tr("Amount", "টাকার পরিমাণ")} (${currency.symbol}) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Description", "বিবরণ")) })
                 }
             },
             confirmButton = {
                 Button(enabled = farmId > 0L && (amountText.toDoubleOrNull() ?: 0.0) > 0.0, onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     onAddExpense(farmId, cat, CurrencyFormatter.toBaseBdt(amountText.toDoubleOrNull() ?: 0.0, currency), desc)
                     showAdd = false
                 }) { Text(strings.save) }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(strings.cancel) } }
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun EmployeesTab(
-    state: FarmerDashboardState,
-    strings: AppStrings,
-    currency: CurrencyOption,
-    onSelectFarm: (Long?) -> Unit,
-    onSaveEmployee: (EmployeeEntity) -> Unit,
-    onDeleteEmployee: (EmployeeEntity) -> Unit,
-    onMarkAttendance: (EmployeeEntity, AttendanceStatus) -> Unit,
-    onPaySalary: (EmployeeEntity, Double, String, String) -> Unit,
-    onOpenPermissions: () -> Unit
-) {
-    val isBn = isBangla()
-    val canManage = state.accessPolicy.has(AppPermission.EMPLOYEES_MANAGE)
-    val canManagePermissions = state.accessPolicy.canManagePermissions()
-    var showAdd by remember { mutableStateOf(false) }
-    var salaryTarget by remember { mutableStateOf<EmployeeEntity?>(null) }
-    val farmsMap = remember(state.farms) { state.farms.associateBy { it.id } }
-    val permCounts = remember(state.employeePermissions) {
-        state.employeePermissions.filter { it.granted }.groupingBy { it.employeeId }.eachCount()
-    }
-    val filtered = remember(state.employees, state.selectedFarmId) {
-        if (state.selectedFarmId == null) state.employees else state.employees.filter { it.farmId == state.selectedFarmId }
-    }
-
-    Scaffold(
-        floatingActionButton = {
-            if (canManage) {
-                ExtendedFloatingActionButton(
-                    onClick = { showAdd = true },
-                    icon = { Icon(Icons.Default.PersonAdd, contentDescription = strings.addEmployee) },
-                    text = { Text(strings.addEmployee) }
-                )
-            }
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item(key = "emp_header") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(tr("Employees", "কর্মচারী"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    FeaturePlanBadge(
-                        isFree = state.subscriptionPolicy.isFree(SubscriptionFeature.EMPLOYEES_PERMISSIONS),
-                        hasActiveSub = state.subscriptionPolicy.hasActiveSubscription
-                    )
-                }
-                FarmSwitcherBar(state.farms, state.selectedFarmId, strings.allFarms, onSelectFarm)
-                if (canManagePermissions) {
-                    Spacer(Modifier.height(8.dp))
-                    FilledTonalButton(
-                        onClick = onOpenPermissions,
-                        modifier = Modifier.fillMaxWidth().testTag("employees_manage_permissions_button")
-                    ) {
-                        Icon(Icons.Default.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(tr("Manage User Permissions (Admin Only)", "ইউজার পারমিশন পরিচালনা (শুধু অ্যাডমিন)"))
-                    }
-                }
-            }
-            if (filtered.isEmpty()) {
-                item(key = "emp_empty") {
-                    EmptyStateCard(
-                        icon = Icons.Default.Groups,
-                        title = tr("No Employees Yet", "কোনো কর্মচারী নেই"),
-                        subtitle = tr(
-                            "Add farm managers and staff, track attendance, permissions, and salaries.",
-                            "খামার ম্যানেজার ও কর্মচারী যোগ করুন, উপস্থিতি ও বেতনের হিসাব রাখুন।"
-                        ),
-                        actionLabel = if (canManage) strings.addEmployee else null,
-                        onAction = if (canManage) ({ showAdd = true }) else null
-                    )
-                }
-            } else {
-                items(filtered, key = { "emp_${it.id}" }) { emp ->
-                    val farmName = farmsMap[emp.farmId]?.name ?: tr("Farm", "খামার")
-                    val paidCount = state.salaryPayments.count { it.employeeId == emp.id }
-                    val grantedCount = permCounts[emp.id] ?: 0
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(emp.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                    Text("${emp.designation} • $farmName • ${emp.phone}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                if (canManage) {
-                                    IconButton(onClick = { onDeleteEmployee(emp) }) {
-                                        Icon(Icons.Default.DeleteOutline, contentDescription = strings.delete, tint = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                            Text(
-                                "${tr("Salary", "বেতন")}: ${CurrencyFormatter.format(emp.salary, currency)}/${tr("mo", "মাস")} • ${tr("Payments logged", "বেতন প্রদান")}: $paidCount • ${tr("Enabled options", "চালু অপশন")}: $grantedCount",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                AttendanceStatus.entries.forEach { st ->
-                                    FilterChip(
-                                        selected = emp.lastAttendanceStatus == st.name,
-                                        enabled = canManage,
-                                        onClick = { if (canManage) onMarkAttendance(emp, st) },
-                                        label = { Text(DomainLocalization.attendanceStatus(st, isBn)) }
-                                    )
-                                }
-                            }
-                            if (canManage) {
-                                FilledTonalButton(onClick = { salaryTarget = emp }, modifier = Modifier.fillMaxWidth()) {
-                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("${tr("Pay Salary", "বেতন পরিশোধ")} (${CurrencyFormatter.format(emp.salary, currency)})")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAdd) {
-        val defaultDesignation = tr("Farm Manager", "খামার ম্যানেজার")
-        var farmId by remember { mutableStateOf(state.selectedFarmId ?: state.farms.firstOrNull()?.id ?: 0L) }
-        var name by remember { mutableStateOf("") }
-        var phone by remember { mutableStateOf("") }
-        var designation by remember { mutableStateOf(defaultDesignation) }
-        var salaryText by remember { mutableStateOf("") }
-        var permInv by remember { mutableStateOf(true) }
-        var permSales by remember { mutableStateOf(false) }
-        var permLive by remember { mutableStateOf(true) }
-
-        AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text(strings.addEmployee) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(tr("Farm", "খামার"), style = MaterialTheme.typography.labelLarge)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        state.farms.forEach { f ->
-                            FilterChip(selected = farmId == f.id, onClick = { farmId = f.id }, label = { Text(f.name) })
-                        }
-                    }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Full Name *", "পূর্ণ নাম *")) }, singleLine = true)
-                    OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text(tr("Phone", "মোবাইল নম্বর")) }, singleLine = true)
-                    OutlinedTextField(value = designation, onValueChange = { designation = it }, label = { Text(tr("Designation", "পদবি")) }, singleLine = true)
-                    OutlinedTextField(value = salaryText, onValueChange = { salaryText = it }, label = { Text("${tr("Monthly Salary", "মাসিক বেতন")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    Text(tr("Starter Permissions (more in User Permissions):", "প্রাথমিক অনুমতি (বিস্তারিত পারমিশন ট্যাবে):"), style = MaterialTheme.typography.labelSmall)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        FilterChip(selected = permInv, onClick = { permInv = !permInv }, label = { Text(tr("Inventory", "মজুদ")) })
-                        FilterChip(selected = permSales, onClick = { permSales = !permSales }, label = { Text(tr("Sales", "বিক্রয়")) })
-                        FilterChip(selected = permLive, onClick = { permLive = !permLive }, label = { Text(tr("Livestock", "পশুপাখি")) })
-                    }
-                }
-            },
-            confirmButton = {
-                Button(enabled = farmId > 0L && name.isNotBlank(), onClick = {
-                    onSaveEmployee(
-                        EmployeeEntity(
-                            farmId = farmId,
-                            ownerUserId = 0L,
-                            name = name.trim(),
-                            phone = phone.trim(),
-                            designation = designation.trim(),
-                            salary = CurrencyFormatter.toBaseBdt(salaryText.toDoubleOrNull() ?: 0.0, currency),
-                            canManageInventory = permInv,
-                            canManageSales = permSales,
-                            canManageLivestock = permLive
-                        )
-                    )
+            dismissButton = {
+                TextButton(onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     showAdd = false
-                }) { Text(strings.save) }
-            },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text(strings.cancel) } }
-        )
-    }
-
-    salaryTarget?.let { emp ->
-        val defaultSalaryNote = tr("Monthly salary", "মাসিক বেতন")
-        var amountText by remember(emp.id) { mutableStateOf(CurrencyFormatter.convertFromBase(emp.salary, currency).toInt().toString()) }
-        var monthLabel by remember(emp.id) { mutableStateOf("November 2026") }
-        var note by remember(emp.id) { mutableStateOf(defaultSalaryNote) }
-        AlertDialog(
-            onDismissRequest = { salaryTarget = null },
-            title = { Text("${tr("Pay Salary", "বেতন দিন")}: ${emp.name}") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(value = amountText, onValueChange = { amountText = it }, label = { Text("${tr("Amount", "পরিমাণ")} (${currency.symbol})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    OutlinedTextField(value = monthLabel, onValueChange = { monthLabel = it }, label = { Text(tr("Month", "মাস")) }, singleLine = true)
-                    OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text(tr("Note", "নোট")) })
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onPaySalary(emp, CurrencyFormatter.toBaseBdt(amountText.toDoubleOrNull() ?: 0.0, currency), monthLabel, note)
-                    salaryTarget = null
-                }) { Text(tr("Confirm Payment", "পরিশোধ নিশ্চিত করুন")) }
-            },
-            dismissButton = { TextButton(onClick = { salaryTarget = null }) { Text(strings.cancel) } }
+                }) { Text(strings.cancel) }
+            }
         )
     }
 }

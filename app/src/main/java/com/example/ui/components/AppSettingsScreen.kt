@@ -105,7 +105,7 @@ fun AppSettingsScreen(
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
                 .testTag("settings_lazy_column"),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 1. Dedicated Settings Hero Header
@@ -551,9 +551,9 @@ fun AppSettingsScreen(
                                         enabled = devWhatsApp.isNotBlank(),
                                         onClick = {
                                             val msgText = if (isBn) {
-                                                "আসসালামু আলাইকুম ${systemSettings.developerName}, Smart Farm অ্যাপ সম্পর্কে সাহায্য প্রয়োজন। ব্যবহারকারী: ${user.name} (${user.email})"
+                                                "আসসালামু আলাইকুম ${systemSettings.developerName}, Smart Buy and Sell অ্যাপ সম্পর্কে সাহায্য প্রয়োজন। ব্যবহারকারী: ${user.name} (${user.email})"
                                             } else {
-                                                "Hello ${systemSettings.developerName}, I need support with Smart Farm Management. User: ${user.name} (${user.email})"
+                                                "Hello ${systemSettings.developerName}, I need support with Smart Buy and Sell. User: ${user.name} (${user.email})"
                                             }
                                             val launched = DeveloperContactHelper.launchWhatsAppDeveloper(context, devWhatsApp, msgText)
                                             if (!launched) {
@@ -880,20 +880,22 @@ fun AppSettingsScreen(
             onDismissRequest = { showLabelEditor = false },
             title = { Text(tr("Customize App Terminology", "অ্যাপের শিরোনাম কাস্টমাইজ করুন")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        tr(
-                            "Leave blank to use default ${currentLanguage.displayName} text.",
-                            "ডিফল্ট ${currentLanguage.nativeName} লেখা ব্যবহার করতে ফাঁকা রাখুন।"
-                        ),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    OutlinedTextField(value = customAppName, onValueChange = { customAppName = it }, label = { Text(tr("App Title", "অ্যাপের নাম")) }, singleLine = true)
-                    OutlinedTextField(value = customDash, onValueChange = { customDash = it }, label = { Text(tr("Dashboard Tab", "ড্যাশবোর্ড ট্যাব")) }, singleLine = true)
-                    OutlinedTextField(value = customFarms, onValueChange = { customFarms = it }, label = { Text(tr("Farms Tab", "খামার ট্যাব")) }, singleLine = true)
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            tr(
+                                "Leave blank to use default ${currentLanguage.displayName} text.",
+                                "ডিফল্ট ${currentLanguage.nativeName} লেখা ব্যবহার করতে ফাঁকা রাখুন।"
+                            ),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        OutlinedTextField(value = customAppName, onValueChange = { customAppName = it }, label = { Text(tr("App Title", "অ্যাপের নাম")) }, singleLine = true)
+                        OutlinedTextField(value = customDash, onValueChange = { customDash = it }, label = { Text(tr("Dashboard Tab", "ড্যাশবোর্ড ট্যাব")) }, singleLine = true)
+                        OutlinedTextField(value = customFarms, onValueChange = { customFarms = it }, label = { Text(tr("Farms Tab", "খামার ট্যাব")) }, singleLine = true)
+                    }
                 }
             },
             confirmButton = {
@@ -916,24 +918,26 @@ fun AppSettingsScreen(
             onDismissRequest = { showSupportDialog = false },
             title = { Text(tr("Report Problem / Support Request", "সমস্যা জানান / সাপোর্ট অনুরোধ")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = subject,
-                        onValueChange = { subject = it },
-                        label = { Text(tr("Subject *", "বিষয় *")) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("support_subject_input")
-                    )
-                    OutlinedTextField(
-                        value = msg,
-                        onValueChange = { msg = it },
-                        label = { Text(tr("Describe your issue *", "সমস্যার বিবরণ লিখুন *")) },
-                        minLines = 3,
-                        modifier = Modifier.fillMaxWidth().testTag("support_message_input")
-                    )
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = subject,
+                            onValueChange = { subject = it },
+                            label = { Text(tr("Subject *", "বিষয় *")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("support_subject_input")
+                        )
+                        OutlinedTextField(
+                            value = msg,
+                            onValueChange = { msg = it },
+                            label = { Text(tr("Describe your issue *", "সমস্যার বিবরণ লিখুন *")) },
+                            minLines = 3,
+                            modifier = Modifier.fillMaxWidth().testTag("support_message_input")
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -962,47 +966,49 @@ fun AppSettingsScreen(
             onDismissRequest = { showEditDevContactDialog = false },
             title = { Text(tr("Configure Developer Support Contact", "ডেভেলপার ও কোম্পানি যোগাযোগ তথ্য")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text(tr("Developer / Company Name", "ডেভেলপার / কোম্পানির নাম")) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editPhone,
-                        onValueChange = { editPhone = it },
-                        label = { Text(tr("Mobile Number (Call)", "মোবাইল নম্বর (কল)")) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editWhatsApp,
-                        onValueChange = { editWhatsApp = it },
-                        label = { Text(tr("WhatsApp Number", "হোয়াটসঅ্যাপ নম্বর")) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editEmail,
-                        onValueChange = { editEmail = it },
-                        label = { Text(tr("Support Email", "সাপোর্ট ইমেইল")) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editNote,
-                        onValueChange = { editNote = it },
-                        label = { Text(tr("Support Message / Note", "সাপোর্ট নির্দেশনা")) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            label = { Text(tr("Developer / Company Name", "ডেভেলপার / কোম্পানির নাম")) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editPhone,
+                            onValueChange = { editPhone = it },
+                            label = { Text(tr("Mobile Number (Call)", "মোবাইল নম্বর (কল)")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editWhatsApp,
+                            onValueChange = { editWhatsApp = it },
+                            label = { Text(tr("WhatsApp Number", "হোয়াটসঅ্যাপ নম্বর")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editEmail,
+                            onValueChange = { editEmail = it },
+                            label = { Text(tr("Support Email", "সাপোর্ট ইমেইল")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editNote,
+                            onValueChange = { editNote = it },
+                            label = { Text(tr("Support Message / Note", "সাপোর্ট নির্দেশনা")) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -1037,54 +1043,56 @@ fun AppSettingsScreen(
             icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(tr("Change Super Admin Password & PIN", "সুপার অ্যাডমিন পাসওয়ার্ড ও পিন পরিবর্তন")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    localErr?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        localErr?.let { err ->
+                            Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedTextField(
+                            value = currentPass,
+                            onValueChange = { currentPass = it; localErr = null },
+                            label = { Text(tr("Current Password *", "বর্তমান পাসওয়ার্ড *")) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newEmail,
+                            onValueChange = { newEmail = it; localErr = null },
+                            label = { Text(tr("Admin Email", "অ্যাডমিন ইমেইল")) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newPass,
+                            onValueChange = { newPass = it; localErr = null },
+                            label = { Text(tr("New Password (min 6 chars)", "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = confirmPass,
+                            onValueChange = { confirmPass = it; localErr = null },
+                            label = { Text(tr("Confirm New Password", "নতুন পাসওয়ার্ড নিশ্চিত করুন")) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newPin,
+                            onValueChange = { newPin = it; localErr = null },
+                            label = { Text(tr("New Developer Security PIN (optional)", "নতুন সিকিউরিটি পিন (ঐচ্ছিক)")) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                    OutlinedTextField(
-                        value = currentPass,
-                        onValueChange = { currentPass = it; localErr = null },
-                        label = { Text(tr("Current Password *", "বর্তমান পাসওয়ার্ড *")) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newEmail,
-                        onValueChange = { newEmail = it; localErr = null },
-                        label = { Text(tr("Admin Email", "অ্যাডমিন ইমেইল")) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newPass,
-                        onValueChange = { newPass = it; localErr = null },
-                        label = { Text(tr("New Password (min 6 chars)", "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)")) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = confirmPass,
-                        onValueChange = { confirmPass = it; localErr = null },
-                        label = { Text(tr("Confirm New Password", "নতুন পাসওয়ার্ড নিশ্চিত করুন")) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newPin,
-                        onValueChange = { newPin = it; localErr = null },
-                        label = { Text(tr("New Developer Security PIN (optional)", "নতুন সিকিউরিটি পিন (ঐচ্ছিক)")) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             },
             confirmButton = {

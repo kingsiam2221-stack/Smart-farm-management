@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +37,7 @@ import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FarmSwitcherBar
 import com.example.ui.components.FeaturePlanBadge
 import com.example.ui.components.KpiMetricCard
+import com.example.ui.components.ProvideSafeTextToolbar
 import com.example.ui.components.SubscriptionRequiredLockCard
 import com.example.ui.components.formatShortDate
 import com.example.ui.components.safeLaunchImagePicker
@@ -331,25 +334,34 @@ private fun SalesTab(
 
     settleTarget?.let { s ->
         var amtText by remember(s.id) { mutableStateOf(CurrencyFormatter.convertFromBase(s.dueAmount, currency).toInt().toString()) }
+        val focusManager = LocalFocusManager.current
+        val textToolbar = LocalTextToolbar.current
+        fun dismissSettle() {
+            textToolbar.hide()
+            focusManager.clearFocus(force = true)
+            settleTarget = null
+        }
         AlertDialog(
-            onDismissRequest = { settleTarget = null },
+            onDismissRequest = { dismissSettle() },
             title = { Text("${tr("Collect Due Payment", "বকেয়া আদায়")} (${s.invoiceNumber})") },
             text = {
-                OutlinedTextField(
-                    value = amtText,
-                    onValueChange = { amtText = it },
-                    label = { Text("${tr("Amount Collected", "আদায়কৃত টাকা")} (${currency.symbol})") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
-                )
+                ProvideSafeTextToolbar {
+                    OutlinedTextField(
+                        value = amtText,
+                        onValueChange = { amtText = it },
+                        label = { Text("${tr("Amount Collected", "আদায়কৃত টাকা")} (${currency.symbol})") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
+                    )
+                }
             },
             confirmButton = {
                 Button(onClick = {
                     onSettleDue(s, CurrencyFormatter.toBaseBdt(amtText.toDoubleOrNull() ?: 0.0, currency))
-                    settleTarget = null
+                    dismissSettle()
                 }) { Text(tr("Confirm", "নিশ্চিত করুন")) }
             },
-            dismissButton = { TextButton(onClick = { settleTarget = null }) { Text(strings.cancel) } }
+            dismissButton = { TextButton(onClick = { dismissSettle() }) { Text(strings.cancel) } }
         )
     }
 }
@@ -383,10 +395,19 @@ private fun CreateSaleDialog(
     val disc = discountText.toDoubleOrNull() ?: 0.0
     val totalPreview = (qty * unitPrice - disc).coerceAtLeast(0.0)
 
+    val focusManager = LocalFocusManager.current
+    val textToolbar = LocalTextToolbar.current
+    fun dismissDialog() {
+        textToolbar.hide()
+        focusManager.clearFocus(force = true)
+        onDismiss()
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { dismissDialog() },
         title = { Text(tr("Create Sales Invoice", "নতুন বিক্রয় ইনভয়েস তৈরি করুন")) },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -510,11 +531,14 @@ private fun CreateSaleDialog(
                 }
                 Text("${tr("Total Payable", "সর্বমোট মূল্য")}: ${currency.symbol}${totalPreview.toInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
+            }
         },
         confirmButton = {
             Button(
                 enabled = farmId > 0L && prodName.isNotBlank() && qty > 0.0,
                 onClick = {
+                    textToolbar.hide()
+                    focusManager.clearFocus(force = true)
                     val paid = paidText.toDoubleOrNull() ?: totalPreview
                     onSave(
                         farmId, selectedCustomer?.id, custName, custPhone, prodCat, prodName.trim(),
@@ -523,7 +547,7 @@ private fun CreateSaleDialog(
                 }
             ) { Text(tr("Complete Sale", "বিক্রয় সম্পন্ন করুন")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel", "বাতিল")) } }
+        dismissButton = { TextButton(onClick = { dismissDialog() }) { Text(tr("Cancel", "বাতিল")) } }
     )
 }
 
@@ -642,23 +666,34 @@ private fun CustomersTab(
             if (uri != null) photoUri = uri.toString()
         }
 
+        val focusManager = LocalFocusManager.current
+        val textToolbar = LocalTextToolbar.current
+        fun dismissCustomer() {
+            textToolbar.hide()
+            focusManager.clearFocus(force = true)
+            showAdd = false
+            editing = null
+        }
+
         AlertDialog(
-            onDismissRequest = { showAdd = false; editing = null },
+            onDismissRequest = { dismissCustomer() },
             title = { Text(if (currentEdit == null) tr("Add Customer", "গ্রাহক যোগ করুন") else tr("Edit Customer", "গ্রাহক সম্পাদনা")) },
             text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(onClick = { safeLaunchImagePicker(picker) }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (photoUri == null) tr("Add Photo", "ছবি যোগ করুন") else tr("Photo Selected", "ছবি নির্বাচিত হয়েছে"))
+                ProvideSafeTextToolbar {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(onClick = { safeLaunchImagePicker(picker) }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (photoUri == null) tr("Add Photo", "ছবি যোগ করুন") else tr("Photo Selected", "ছবি নির্বাচিত হয়েছে"))
+                        }
+                        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Customer Name *", "গ্রাহকের নাম *")) }, singleLine = true)
+                        OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile Number *", "মোবাইল নম্বর *")) }, singleLine = true)
+                        OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text(tr("Email", "ইমেইল")) }, singleLine = true)
+                        OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("Address", "ঠিকানা")) })
                     }
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(tr("Customer Name *", "গ্রাহকের নাম *")) }, singleLine = true)
-                    OutlinedTextField(value = mobile, onValueChange = { mobile = it }, label = { Text(tr("Mobile Number *", "মোবাইল নম্বর *")) }, singleLine = true)
-                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text(tr("Email", "ইমেইল")) }, singleLine = true)
-                    OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text(tr("Address", "ঠিকানা")) })
                 }
             },
             confirmButton = {
@@ -672,11 +707,10 @@ private fun CustomersTab(
                             photoUri = photoUri
                         )
                     )
-                    showAdd = false
-                    editing = null
+                    dismissCustomer()
                 }) { Text(strings.save) }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false; editing = null }) { Text(strings.cancel) } }
+            dismissButton = { TextButton(onClick = { dismissCustomer() }) { Text(strings.cancel) } }
         )
     }
 }
@@ -736,8 +770,31 @@ private fun IncomingOrdersTab(
                             Text(tr("Customer requested cancellation!", "গ্রাহক অর্ডার বাতিলের অনুরোধ করেছেন!"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
                         }
                         Text("${tr("Items", "পণ্য")}: ${order.itemsSummary}", style = MaterialTheme.typography.bodyMedium)
-                        Text("${tr("Customer", "গ্রাহক")}: ${order.customerName} (${order.customerPhone}) • ${order.deliveryAddress}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)}) • ${formatShortDate(order.createdAt)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "${tr("Customer", "গ্রাহক")}: ${order.customerName} (${order.customerPhone})",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        val locationArea = listOf(order.deliveryPoliceStation, order.deliveryDistrict)
+                            .filter { it.isNotBlank() }
+                            .joinToString(", ")
+                        if (locationArea.isNotBlank()) {
+                            Text(
+                                "${tr("Police Station & District", "থানা ও জেলা")}: $locationArea",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Text(
+                            "${tr("Address", "ঠিকানা")}: ${order.deliveryAddress}${if (order.deliveryLandmark.isNotBlank()) " • ${order.deliveryLandmark}" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "${tr("Total", "মোট")}: ${CurrencyFormatter.format(order.totalAmount, currency)} (${DomainLocalization.paymentMethod(order.paymentMethod, isBn)})${if (order.paymentReference.isNotBlank()) " • Ref: ${order.paymentReference}" else ""} • ${formatShortDate(order.createdAt)}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
 
                         if (canManage) {
                             FlowRow(

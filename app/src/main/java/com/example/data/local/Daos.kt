@@ -277,6 +277,48 @@ interface OperationsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSalaryPayment(payment: SalaryPaymentEntity): Long
 
+    @Delete
+    suspend fun deleteSalaryPayment(payment: SalaryPaymentEntity)
+
+    @Query("DELETE FROM salary_payments WHERE ownerUserId = :ownerId")
+    suspend fun deleteSalaryPaymentsByOwner(ownerId: Long)
+
+    @Query("SELECT * FROM employee_task_targets WHERE ownerUserId = :ownerId ORDER BY createdAt DESC")
+    fun observeTaskTargetsByOwner(ownerId: Long): Flow<List<EmployeeTaskTargetEntity>>
+
+    @Query("SELECT * FROM employee_task_targets WHERE employeeId = :employeeId ORDER BY createdAt DESC")
+    fun observeTaskTargetsByEmployee(employeeId: Long): Flow<List<EmployeeTaskTargetEntity>>
+
+    @Query("SELECT * FROM employee_task_targets WHERE id = :id LIMIT 1")
+    suspend fun getTaskTargetById(id: Long): EmployeeTaskTargetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTaskTarget(target: EmployeeTaskTargetEntity): Long
+
+    @Update
+    suspend fun updateTaskTarget(target: EmployeeTaskTargetEntity)
+
+    @Delete
+    suspend fun deleteTaskTarget(target: EmployeeTaskTargetEntity)
+
+    @Query("DELETE FROM employee_task_targets WHERE ownerUserId = :ownerId")
+    suspend fun deleteTaskTargetsByOwner(ownerId: Long)
+
+    @Query("SELECT * FROM employee_auto_messages WHERE ownerUserId = :ownerId ORDER BY sentAt DESC LIMIT 200")
+    fun observeAutoMessagesByOwner(ownerId: Long): Flow<List<EmployeeAutoMessageEntity>>
+
+    @Query("SELECT * FROM employee_auto_messages WHERE employeeId = :employeeId ORDER BY sentAt DESC LIMIT 100")
+    fun observeAutoMessagesByEmployee(employeeId: Long): Flow<List<EmployeeAutoMessageEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAutoMessage(msg: EmployeeAutoMessageEntity): Long
+
+    @Delete
+    suspend fun deleteAutoMessage(msg: EmployeeAutoMessageEntity)
+
+    @Query("DELETE FROM employee_auto_messages WHERE ownerUserId = :ownerId")
+    suspend fun deleteAutoMessagesByOwner(ownerId: Long)
+
     @Query("UPDATE employees SET linkedUserId = NULL WHERE linkedUserId = :userId")
     suspend fun unlinkEmployeeUser(userId: Long)
 }
@@ -316,11 +358,17 @@ interface SubscriptionAndAdminDao {
     @Query("SELECT * FROM notifications WHERE targetUserId = :userId OR targetUserId = 0 ORDER BY createdAt DESC")
     fun observeNotificationsForUser(userId: Long): Flow<List<AppNotificationEntity>>
 
+    @Query("SELECT * FROM notifications WHERE targetUserId = :userId OR targetUserId = :ownerId OR targetUserId = 0 ORDER BY createdAt DESC")
+    fun observeNotificationsForUserOrOwner(userId: Long, ownerId: Long): Flow<List<AppNotificationEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotification(notification: AppNotificationEntity): Long
 
     @Query("UPDATE notifications SET readFlag = 1 WHERE targetUserId = :userId OR targetUserId = 0")
     suspend fun markAllRead(userId: Long)
+
+    @Query("UPDATE notifications SET readFlag = 1 WHERE targetUserId = :userId OR targetUserId = :ownerId OR targetUserId = 0")
+    suspend fun markAllReadForUserOrOwner(userId: Long, ownerId: Long)
 
     @Query("SELECT * FROM support_requests WHERE userId = :userId ORDER BY createdAt DESC")
     fun observeSupportByUser(userId: Long): Flow<List<SupportRequestEntity>>

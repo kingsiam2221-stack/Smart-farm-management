@@ -303,11 +303,13 @@ fun LivestockScreen(
             onDismissRequest = { showCustomCategoryDialog = false },
             title = { Text(tr("Add Custom Animal / Bird Type", "কাস্টম পশু বা পাখির ধরন যোগ করুন")) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = catName, onValueChange = { catName = it }, label = { Text(tr("Category Name (e.g., Emu, Rabbit)", "ধরনের নাম (যেমন: খরগোশ, টার্কি)")) }, singleLine = true)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = isBird, onCheckedChange = { isBird = it })
-                        Text(tr("Count as Bird / Poultry", "পাখি / পোল্ট্রি হিসেবে গণনা করুন"))
+                ProvideSafeTextToolbar {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = catName, onValueChange = { catName = it }, label = { Text(tr("Category Name (e.g., Emu, Rabbit)", "ধরনের নাম (যেমন: খরগোশ, টার্কি)")) }, singleLine = true)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isBird, onCheckedChange = { isBird = it })
+                            Text(tr("Count as Bird / Poultry", "পাখি / পোল্ট্রি হিসেবে গণনা করুন"))
+                        }
                     }
                 }
             },
@@ -395,6 +397,7 @@ private fun AnimalEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) tr("Add Animal / Bird", "পশু / পাখি যোগ করুন") else tr("Edit Record", "তথ্য সম্পাদনা")) },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -460,6 +463,7 @@ private fun AnimalEditorDialog(
                     OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text(tr("Notes", "নোট")) })
                 }
             }
+            }
         },
         confirmButton = {
             Button(
@@ -508,6 +512,7 @@ private fun AnimalEventDialog(
         onDismissRequest = onDismiss,
         title = { Text("${tr("Log Event", "ঘটনা লিখুন")}: ${animal.name}") },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -545,6 +550,7 @@ private fun AnimalEventDialog(
                     singleLine = true
                 )
                 OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text(tr("Details / Medicine / Notes", "বিবরণ / ওষুধ / নোট")) })
+            }
             }
         },
         confirmButton = {
@@ -798,6 +804,7 @@ private fun RecordEggDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr("Record Daily Egg Production", "দৈনিক ডিম উৎপাদন হিসাব লিখুন")) },
         text = {
+            ProvideSafeTextToolbar {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -847,6 +854,7 @@ private fun RecordEggDialog(
                         )
                     }
                 }
+            }
             }
         },
         confirmButton = {
