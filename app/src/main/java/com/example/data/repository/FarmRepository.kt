@@ -32,6 +32,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         if (trimmed.isBlank() || password.isBlank()) {
             return Result.failure(IllegalArgumentException("Email/mobile and password are required."))
         }
+        if (userDao.countUsers() == 0) {
+            initializeDatabase()
+        }
         val user = userDao.getUserByEmail(trimmed) ?: userDao.getUserByMobile(trimmed)
             ?: return Result.failure(IllegalArgumentException("No account found with those credentials."))
         if (!PasswordHasher.verify(password, user.passwordHash)) {
@@ -55,6 +58,9 @@ class FarmRepository(private val db: SmartFarmDatabase) {
         val trimmedPin = securityPin.trim()
         if (trimmed.isBlank() || password.isBlank() || trimmedPin.isBlank()) {
             return Result.failure(IllegalArgumentException("Email, password, and security PIN are required."))
+        }
+        if (userDao.countUsers() == 0) {
+            initializeDatabase()
         }
         val user = userDao.getUserByEmail(trimmed) ?: userDao.getUserByMobile(trimmed)
             ?: return Result.failure(IllegalArgumentException("No account found with those credentials."))

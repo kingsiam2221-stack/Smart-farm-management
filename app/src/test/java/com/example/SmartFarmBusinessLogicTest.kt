@@ -2610,4 +2610,11 @@ class SmartFarmBusinessLogicTest {
         assertTrue(enabledNagad.isSuccess)
         assertEquals("Nagad", enabledNagad.getOrThrow().first().paymentMethod)
     }
+
+    @Test
+    fun superAdminLogin_toleratesCopiedWhitespaceAndUppercaseEmail() = runTest {
+        val result = repo.loginSuperAdmin(" ADMIN@SMARTFARM.APP ", " admin@2026 ", " 2026 ")
+        assertTrue(result.isSuccess)
+        assertEquals(UserRole.SUPER_ADMIN.name, result.getOrThrow().role)
+    }
 }

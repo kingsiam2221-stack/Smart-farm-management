@@ -2,16 +2,19 @@ package com.example.data.local
 
 import kotlinx.coroutines.flow.first
 import java.security.MessageDigest
+import java.util.Locale
 
 object PasswordHasher {
     fun hash(password: String, salt: String = "SmartFarmSalt2026"): String {
         val bytes = MessageDigest.getInstance("SHA-256")
             .digest("$salt:$password".toByteArray(Charsets.UTF_8))
-        return bytes.joinToString("") { "%02x".format(it) }
+        return bytes.joinToString("") { String.format(Locale.US, "%02x", it) }
     }
 
     fun verify(password: String, storedHash: String): Boolean {
-        return hash(password) == storedHash
+        if (hash(password) == storedHash) return true
+        val trimmed = password.trim()
+        return trimmed != password && hash(trimmed) == storedHash
     }
 }
 

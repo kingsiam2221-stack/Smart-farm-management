@@ -1140,6 +1140,8 @@ fun AuthScreen(
         var adminEmail by remember { mutableStateOf("") }
         var adminPass by remember { mutableStateOf("") }
         var devPin by remember { mutableStateOf("") }
+        var showAdminPass by remember { mutableStateOf(false) }
+        var showAdminPin by remember { mutableStateOf(false) }
         var localErr by remember { mutableStateOf<String?>(null) }
 
         fun dismissAdminDialog() {
@@ -1170,6 +1172,7 @@ fun AuthScreen(
                             value = adminEmail,
                             onValueChange = { adminEmail = it; localErr = null },
                             label = { Text(if (isBangla) "অ্যাডমিন ইমেইল" else "Admin Email") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("admin_login_email_input")
                         )
@@ -1177,7 +1180,19 @@ fun AuthScreen(
                             value = adminPass,
                             onValueChange = { adminPass = it; localErr = null },
                             label = { Text(if (isBangla) "অ্যাডমিন পাসওয়ার্ড" else "Admin Password") },
-                            visualTransformation = PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showAdminPass = !showAdminPass },
+                                    modifier = Modifier.testTag("admin_login_password_toggle")
+                                ) {
+                                    Icon(
+                                        if (showAdminPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (isBangla) "পাসওয়ার্ড দেখুন/লুকান" else "Toggle password"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showAdminPass) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("admin_login_password_input")
                         )
@@ -1185,8 +1200,19 @@ fun AuthScreen(
                             value = devPin,
                             onValueChange = { devPin = it; localErr = null },
                             label = { Text(if (isBangla) "ডেভেলপার সিকিউরিটি পিন" else "Developer Security PIN") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showAdminPin = !showAdminPin },
+                                    modifier = Modifier.testTag("admin_login_pin_toggle")
+                                ) {
+                                    Icon(
+                                        if (showAdminPin) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (isBangla) "পিন দেখুন/লুকান" else "Toggle PIN"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showAdminPin) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, autoCorrectEnabled = false),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().testTag("admin_login_pin_input")
                         )
